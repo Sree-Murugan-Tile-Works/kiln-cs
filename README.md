@@ -1,2 +1,2 @@
-# kiln-cs
-Kiln Control System
+# kiln-cs - Kiln Control System
+
