@@ -1,0 +1,5 @@
+*.cfg
+*.db
+*.ini
+*.yml
+*.yaml

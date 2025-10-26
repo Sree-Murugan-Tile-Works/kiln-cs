@@ -1,0 +1,23 @@
+# Kiln control
+
+
+[plc]
+ip = "192.168.100.1"
+port = 9600
+
+[orifice_plate]
+C = 0.7
+A2 = 0.37161216 # computed as the square of 0.6096
+Z = 0.981213836
+R = 8.31445  # Universal gas constant
+M = 89  # Molecular weight
+K = 1.4  # Specific heat ratio
+
+[pid]
+gain = 1
+int_time = 0
+d_time = 0
+out_0 = 0
+out_100 = 100
+crit_sections = [[100, 200]]
+max_output_rate = 100
