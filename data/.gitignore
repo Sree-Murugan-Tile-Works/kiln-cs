@@ -3,3 +3,5 @@
 *.ini
 *.yml
 *.yaml
+*.db-shm
+*.db-wal

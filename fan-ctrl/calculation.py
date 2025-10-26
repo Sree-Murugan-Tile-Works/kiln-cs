@@ -46,18 +46,25 @@ class Scaler:
 		return (f"Scaler(raw=({self.raw_min},{self.raw_max}), "
 		        f"eng=({self.eng_min},{self.eng_max}))")
 
-def calc_pv(P2by1, T):
-	# C*A2*sqrt((2*Z*R*T1/M*(K/(k-1))*((P2by1)**(2/k)-(P2by1)**((K+1/K))))*1000
-	sr = config.srr_constant()
-	C=sr.C
-	A2=sr.A2
-	Z= sr.Z
-	R= sr.R
-	M = sr.M
-	K = sr.K
 
-	return C * A2 * math.sqrt(
-		(2 * Z * R * T / M) *
-        (K / (K - 1)) *
-        ((P2by1 ** (2 / K)) - (P2by1 ** ((K + 1) / K))) *
+def calc_pv(cfg, kiln_data):
+	# C*A2*sqrt(
+	#   (
+	#       2*Z*R*T1/M * (K/(k-1)) * ( (P2by1)**(2/k) - (P2by1)**( (K+1)/K ) )
+	#   )
+	#   )*1000
+
+	c = cfg.c
+	a2 = cfg.a2
+	z = cfg.z
+	r = cfg.r
+	m = cfg.m
+	k = cfg.k
+
+	t = kiln_data.temp
+	p2by1 = kiln_data.p2 / kiln_data.p2
+	return c * a2 * math.sqrt(
+		(2 * z * r * t / m) *
+        (k / (k - 1)) *
+        ((p2by1 ** (2 / k)) - (p2by1 ** ((k + 1) / k))) *
         1000)

@@ -6,8 +6,10 @@ from utils import AttrDict
 
 
 parameters_definition: List[Tuple[str, str, Any, str]] = [
-    ('ip', 's', None, 'PLC IP Address'),
-    ('fins_port', 'i', 9600, 'PLC FINS Port'),
+    ('plc_ip', 's', None, 'PLC IP Address'),
+    ('plc_fins_port', 'i', 9600, 'PLC FINS Port'),
+    ('dest_node_address', 'i', 1, 'PLC FINS Node Address'),
+    ('src_node_address', 'i', 25, 'Host Node Address'),
     ('kp', 'f', 0, 'PID Proportional Gain'),
     ('ki', 'f', 0, 'PID Integral Gain'),
     ('kd', 'f', 0, 'PID Derivative Gain'),
