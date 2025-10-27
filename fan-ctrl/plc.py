@@ -1,9 +1,12 @@
+import logging
 from dataclasses import dataclass
 from typing import Optional
 import socket
 import time
 
 import fins.tcp
+
+import calculation
 
 
 SOCKET_TIMEOUT = 2
@@ -17,7 +20,6 @@ class KilnData:
 	p2: float
 	temp: float
 	q: float
-	motor_rpm: int
 
 
 class KilnPLC:
@@ -25,11 +27,17 @@ class KilnPLC:
 		self.fins_con:Optional[fins.tcp.TCPFinsConnection] =  None
 		self.com_ok = None
 		self.data:KilnData = KilnData(0,0,0,0,0)
+		self.scl_p1 = None
+		self.scl_p2 = None
+		self.scl_t = None
 		self.cfg = None
 		self.set_cfg(cfg)
 
 	def set_cfg(self, cfg):
 		self.cfg = cfg
+		self.scl_p1 = calculation.Scaler(cfg.p1_plc_min, cfg.p1_plc_max, cfg.p1_eng_min, cfg.p1_eng_max)
+		self.scl_p2 = calculation.Scaler(cfg.p2_plc_min, cfg.p2_plc_max, cfg.p2_eng_min, cfg.p2_eng_max)
+		self.scl_t = calculation.Scaler(cfg.t_plc_min, cfg.t_plc_max, cfg.t_eng_min, cfg.t_eng_max)
 
 	def connect(self):
 		last_e = None
@@ -80,12 +88,30 @@ class KilnPLC:
 	def __del__(self):
 		self.close()
 
-	def read(self):
-		pass
+	def read_all(self):
+		# read DM registers
+		p1_raw = 0
+		p2_raw = 0
+		t_raw = 0
+		# todo: detect and handle negative values properly
+
+		err_ai_chl = [ x[1] for x in [(p1_raw, "P1"), (p2_raw, "P2"), (t_raw, "T") ] if x[0] == self.cfg.plc_ai_error]
+		if err_ai_chl:
+			logging.error(f"Sensor Error(s) in AI Channels: {', '.join(err_ai_chl)}")
+			self.com_ok = False
+			return False
+		# scale each value
+		self.data.p1 = self.scl_p1(p1_raw)
+		self.data.p2 = self.scl_p2(p2_raw)
+		self.data.t = self.scl_t(t_raw)
+
+		# compute q value
+		self.data.q = calculation.calc_pv(self.cfg, self.data)
 		self.com_ok = True
+		return True
 
 	def write(self):
-		pass
+		# write motor rpm in DM register
 		self.com_ok = True
 
 	def read_dm(self, d_addr, count):

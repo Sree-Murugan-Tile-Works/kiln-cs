@@ -24,6 +24,21 @@ parameters_definition: List[Tuple[str, str, Any, str]] = [
     ('cur_cmd', 's', 'OFF', 'Current Command [PID 43.0 | MAN 340 | OFF]'),
     ('pid_max_rpm', 'i', 450, 'PID Max Output RPM'),
     ('pid_min_rpm', 'i', 0, 'PID Min Output RPM'),
+    ('motor_max_rpm', 'i', 450, 'Motor Max Output RPM'),
+    ('motor_min_rpm', 'i', 0, 'Motor Min Output RPM'),
+    ('p1_plc_min', 'i', 0, 'P1 - Scale AI PLC Min'),
+    ('p1_plc_max', 'i', 6000, 'P1 - Scale AI PLC Max'),
+    ('p1_eng_min', 'f', 0, 'P1 - Scale AI Engg Min'),
+    ('p1_eng_max', 'f', 6000, 'P2 - Scale AI Engg Max'),
+    ('p2_plc_min', 'i', 0, 'P2 - Scale AI PLC Min'),
+    ('p2_plc_max', 'i', 6000, 'P2 - Scale AI PLC Max'),
+    ('p2_eng_min', 'f', 0, 'P2 - Scale AI Engg Min'),
+    ('p2_eng_max', 'f', 6000, 'P2 - Scale AI Engg Max'),
+    ('t_plc_min', 'i', 0, 'T - Scale AI PLC Min'),
+    ('t_plc_max', 'i', 6000, 'T - Scale AI PLC Max'),
+    ('t_eng_min', 'f', 0, 'T - Scale AI Engg Min'),
+    ('t_eng_max', 'f', 6000, 'T - Scale AI Engg Max'),
+    ('plc_ai_error', 'f', 8000, 'PLC Analog Input Error Value'),
 ]
 
 
@@ -105,7 +120,6 @@ def get_param(conn: sqlite3.Connection, name: str) -> Any:
     return s_v  # 's'
 
 
-
 def load_config_from_db(db_path):
     config = AttrDict()
     conn = sqlite3.connect(db_path)
@@ -128,6 +142,14 @@ def load_config_from_db(db_path):
         conn.close()
 
     return config
+
+
+def conf_validate(cfg):
+    if cfg.pid_max_rpm < cfg.pid_min_rpm:
+        raise ValueError(f"PID Max RPM ({cfg.pid_max_rpm}) < PID Min RPM ({cfg.pid_min_rpm}).")
+
+    if cfg.motor_max_rpm < cfg.motor_min_rpm:
+        raise ValueError(f"Motor Max RPM ({cfg.motor_max_rpm}) < Motor Min RPM ({cfg.motor_min_rpm}).")
 
 
 if __name__ == '__main__':

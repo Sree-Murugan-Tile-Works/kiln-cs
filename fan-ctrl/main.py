@@ -15,6 +15,7 @@ import dbwriter
 
 RELOAD_CFG_IN = 60
 CONFIG_DB = "../data/config.db"
+DATA_DB = "../data/data.db"
 logging.basicConfig(level=logging.INFO)
 QUEUE_MAX = 10000
 
@@ -23,6 +24,7 @@ stop_event = threading.Event()
 
 
 def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
+    logging.info(f"DAQ_PID Thread starting, Loading config from {CONFIG_DB}...")
     # load config
     cfg = config.load_config_from_db(CONFIG_DB)
 
@@ -42,6 +44,9 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
 
     next_time = time.monotonic()
     next_reload = time.monotonic() + RELOAD_CFG_IN
+    last_comm = True
+    last_command = ""
+    pid_out = 0
 
     while not stop_e.is_set():
         if time.monotonic() >= next_reload:
@@ -54,21 +59,27 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
             next_reload += RELOAD_CFG_IN
 
         # read data from PLC
-        kiln_plc.read()
+        kiln_plc.read_all()
         read_time = time.monotonic()
 
         if not kiln_plc.com_ok:
             # write to log
-            print("error")
+            logging.error(f"Error communicating with from PLC.")
+            last_comm = False
 
         else:
-            # do computation on read values and command
-            q_value = calculation.calc_pv(cfg, kiln_plc.data)
+            if not last_comm:
+                last_comm = True
+                logging.info("PLC Com OK.")
+
+            if last_command != cfg.cur_cmd:
+                last_command = cfg.cur_cmd
+                logging.info(f"Command {cmd.command} received.")
 
             if cmd.command == "PID":
                 # calc PID
-                pid_out = pid_ctrl.compute(q_value, read_time)
-                fan_drive_ctl.set_output(pid_out)
+                pid_out = pid_ctrl.compute(kiln_plc.data.q, read_time)
+                fan_drive_ctl.set_output_percent(pid_out)
 
             elif cmd.command == "MAN":
                 fan_drive_ctl.set_rpm(cmd.value)
@@ -76,7 +87,7 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
             elif cmd.command == "OFF":
                 fan_drive_ctl.off()
 
-            kiln_plc.data.motor_rpm = fan_drive_ctl.run_rpm
+            kiln_plc.data.motor_rpm = fan_drive_ctl.commanded_rpm
 
             # write to PLC
             kiln_plc.write()
@@ -84,7 +95,9 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
 
             # write to db
             try:
-                data_q.put_nowait({'plc_data': kiln_plc.data, 'pv': q_value, 'timestamp': read_time})
+                data_q.put_nowait({'plc_data': kiln_plc.data, 'cmd':cmd.command, "pid_out":pid_out,
+                                   "demanded_rpm":fan_drive_ctl.demanded_rpm,
+                                   "cmd_rpm":fan_drive_ctl.commanded_rpm, 'timestamp': read_time})
             except queue.Full:
                 logging.warning("Data queue full; dropping data")
 
@@ -93,8 +106,12 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
         sleep_time = max(0, next_time - time.monotonic())
         time.sleep(sleep_time)
 
+    logging.error(f"DAQ_PID Thread exit.")
+
 
 def signal_handler(sig, frame):
+    sig_name = signal.Signals(sig).name
+    logging.info(f"Received signal: {sig_name} ({sig})")
     stop_event.set()
 
 
@@ -102,7 +119,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     t_daq_pid = threading.Thread(target=daq_pid, args=(data_queue,stop_event))
-    t_db = threading.Thread(target=dbwriter.db_writer, args=(data_queue,stop_event))
+    t_db = threading.Thread(target=dbwriter.db_writer, args=(data_queue,stop_event,DATA_DB))
     t_monitor = threading.Thread(target=dbwriter.queue_monitor, args=(data_queue, stop_event, int(QUEUE_MAX * 0.9)))
     t_monitor.start()
     t_daq_pid.start()
