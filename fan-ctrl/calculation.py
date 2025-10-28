@@ -1,5 +1,7 @@
 import math
 import config
+from collections import deque
+
 
 class Scaler:
 	"""
@@ -47,6 +49,29 @@ class Scaler:
 		        f"eng=({self.eng_min},{self.eng_max}))")
 
 
+class MovingAverage:
+	def __init__(self, size):
+		self.q:deque = deque()
+		self.window_size = size
+		self.sum = 0
+
+	def add(self, e):
+		v = float(e)
+		self.q.append(v)
+		self.sum += v
+		if len(self.q) > self.window_size:
+			self.sum -= self.q.popleft()
+
+	@property
+	def mean(self) -> float:
+		if not self.q:
+			return 0.0
+		return self.sum / len(self.q)
+
+	def __str__(self):
+		return str(list(self.q))
+
+
 def calc_pv(cfg, kiln_data):
 	# C*A2*sqrt(
 	#   (
@@ -68,3 +93,4 @@ def calc_pv(cfg, kiln_data):
         (k / (k - 1)) *
         ((p2by1 ** (2 / k)) - (p2by1 ** ((k + 1) / k))) *
         1000)
+
