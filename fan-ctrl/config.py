@@ -38,7 +38,12 @@ parameters_definition: List[Tuple[str, str, Any, str]] = [
     ('t_plc_max', 'i', 6000, 'T - Scale AI PLC Max'),
     ('t_eng_min', 'f', 0, 'T - Scale AI Engg Min'),
     ('t_eng_max', 'f', 6000, 'T - Scale AI Engg Max'),
-    ('plc_ai_error', 'f', 8000, 'PLC Analog Input Error Value'),
+    ('rpm_plc_min', 'i', 0, 'T - Scale Motor RPM PLC Min'),
+    ('rpm_plc_max', 'i', 6000, 'T - Scale Motor RPM PLC Max'),
+    ('rpm_eng_min', 'f', 0, 'T - Scale Motor RPM Engg Min'),
+    ('rpm_eng_max', 'f', 6000, 'T - Scale Motor RPM Engg Max'),
+    ('plc_ai_error', 'i', 8000, 'PLC Analog Input Error Value'),
+    ('q_average_count', 'i', 15, 'Q Value Moving Average Samples'),
 ]
 
 

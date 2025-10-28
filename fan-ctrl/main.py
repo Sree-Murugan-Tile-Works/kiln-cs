@@ -16,8 +16,9 @@ import dbwriter
 RELOAD_CFG_IN = 60
 CONFIG_DB = "../data/config.db"
 DATA_DB = "../data/data.db"
-logging.basicConfig(level=logging.INFO)
 QUEUE_MAX = 10000
+
+logging.basicConfig(level=logging.INFO)
 
 data_queue = queue.Queue(maxsize=QUEUE_MAX)
 stop_event = threading.Event()
@@ -41,6 +42,7 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
     kiln_plc: plc.KilnPLC = plc.KilnPLC(cfg)
     pid_ctrl: pid.PIDController = pid.PIDController(cfg)
     fan_drive_ctl: fan_drive.FanDrive = fan_drive.FanDrive(cfg)
+    q_avg: calculation.MovingAverage = calculation.MovingAverage(cfg.q_average_count)
 
     next_time = time.monotonic()
     next_reload = time.monotonic() + RELOAD_CFG_IN
@@ -68,6 +70,7 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
             last_comm = False
 
         else:
+
             if not last_comm:
                 last_comm = True
                 logging.info("PLC Com OK.")
@@ -76,9 +79,11 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
                 last_command = cfg.cur_cmd
                 logging.info(f"Command {cmd.command} received.")
 
+            q_avg.add(kiln_plc.data.q)
+
             if cmd.command == "PID":
-                # calc PID
-                pid_out = pid_ctrl.compute(kiln_plc.data.q, read_time)
+                # calc PID on mean
+                pid_out = pid_ctrl.compute(q_avg.mean, read_time)
                 fan_drive_ctl.set_output_percent(pid_out)
 
             elif cmd.command == "MAN":
