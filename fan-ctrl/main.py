@@ -11,7 +11,6 @@ import plc
 import pid
 import fan_drive
 import config
-import calculation
 import dbwriter
 
 
@@ -132,6 +131,9 @@ if __name__ == '__main__':
     t_monitor.start()
     t_daq_pid.start()
     t_db.start()
+
+    while not stop_event.is_set():
+        time.sleep(1)
 
     t_daq_pid.join()
     t_db.join()
