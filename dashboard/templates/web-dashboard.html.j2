@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Dashboard</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px; }
+    .card { border: 1px solid #eee; border-radius: 10px; padding: 12px; }
+    .key { color: #666; font-size: 0.85rem; }
+    .val { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .topbar { display:flex; gap: 8px; margin-bottom: 10px; }
+    .btn { display:inline-block; padding:6px 10px; border:1px solid #ccc; border-radius:6px; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a class="btn" href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a class="btn" href="{{ url_for('config_index') }}">Config</a>
+  </div>
+
+  <h1>Current Readings</h1>
+  {% if timestamp_ist %}
+    <div style="margin:4px 0 12px 0; color:#666">Last update (IST): {{ timestamp_ist }}</div>
+  {% endif %}
+
+  {% if current %}
+    <div class="grid">
+      {% for k, v in current.items() %}
+        <div class="card">
+          <div class="key">{{ k }}</div>
+          <div class="val">{{ v }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div>No recent rows found in <code>kiln_data</code>.</div>
+  {% endif %}
+
+  <h1 style="margin-top:18px;">Last Hour</h1>
+  <img src="{{ url_for('graph_png') }}" alt="Last hour graph" style="max-width:100%; border:1px solid #eee; border-radius:10px;">
+</body>
+</html>

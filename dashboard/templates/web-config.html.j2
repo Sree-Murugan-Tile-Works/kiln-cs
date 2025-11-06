@@ -100,7 +100,7 @@
 {% endwith %}
 
 <div class="topbar">
-    <a class="btn" href="{{ url_for('export_json') }}">Export JSON</a>
+    <a class="btn" href="{{ url_for('config_export_json') }}">Export JSON</a>
 </div>
 
 <table>
@@ -122,7 +122,7 @@
                 {{ r.description or '' }}
             </td>
             <td>
-                <form method="post" action="{{ url_for('save_one', name=r.name) }}">
+                <form method="post" action="{{ url_for('config_save_one', name=r.name) }}">
                     {% set value = {'i': r.int_value, 'f': r.float_value, 's': r.str_value}[r.type] %}
                     {% set step = '1' if r.type == 'i' else ('any' if r.type == 'f' else None) %}
                     <input type="hidden" name="name" value="{{ r.name }}"/>
@@ -142,14 +142,6 @@
     </tbody>
 </table>
 
-<script>
-
-    function copyRowValues(name, form) {
-        // copy the visible inputs into the quick-save hidden fields
-        const valInput = document.querySelector(`[name="value__${name}"]`);
-        if (valInput) form.querySelector('[name="value"]').value = valInput.value;
-    }
-</script>
 
 </body>
 </html>
