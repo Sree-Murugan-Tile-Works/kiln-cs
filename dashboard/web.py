@@ -27,7 +27,7 @@ from flask import (
 )
 
 # --- Configuration -----------------------------------------------------------
-CONF_DB_PATH = os.environ.get("CONFIG_DB", os.path.abspath("../config/config.db"))
+CONF_DB_PATH = os.environ.get("CONFIG_DB", os.path.abspath("../data/config.db"))
 DATA_DB_PATH = os.environ.get("DATA_DB", os.path.abspath("../data/data.db"))
 APP_USER = os.environ.get("APP_USER")
 APP_PASS = os.environ.get("APP_PASS")

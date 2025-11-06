@@ -15,7 +15,7 @@ import dbwriter
 
 
 RELOAD_CFG_IN = int(os.environ.get("RELOAD_CFG_IN", 60))
-CONFIG_DB = os.environ.get("CONFIG_DB", "../config/config.db")
+CONFIG_DB = os.environ.get("CONFIG_DB", "../data/config.db")
 DATA_DB = os.environ.get("DATA_DB", "../data/data.db")
 
 QUEUE_MAX = 10000
