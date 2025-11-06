@@ -1,8 +1,10 @@
 import time
+import datetime
 import queue
 import threading
 import signal
 import logging
+import os
 
 import command
 import plc
@@ -13,9 +15,10 @@ import calculation
 import dbwriter
 
 
-RELOAD_CFG_IN = 60
-CONFIG_DB = "../data/config.db"
-DATA_DB = "../data/data.db"
+RELOAD_CFG_IN = int(os.environ.get("RELOAD_CFG_IN", 60))
+CONFIG_DB = os.environ.get("CONFIG_DB", "../config/config.db")
+DATA_DB = os.environ.get("DATA_DB", "../data/data.db")
+
 QUEUE_MAX = 10000
 
 logging.basicConfig(level=logging.INFO)
@@ -42,7 +45,6 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
     kiln_plc: plc.KilnPLC = plc.KilnPLC(cfg)
     pid_ctrl: pid.PIDController = pid.PIDController(cfg)
     fan_drive_ctl: fan_drive.FanDrive = fan_drive.FanDrive(cfg)
-    q_avg: calculation.MovingAverage = calculation.MovingAverage(cfg.q_average_count)
 
     next_time = time.monotonic()
     next_reload = time.monotonic() + RELOAD_CFG_IN
@@ -79,11 +81,9 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
                 last_command = cfg.cur_cmd
                 logging.info(f"Command {cmd.command} received.")
 
-            q_avg.add(kiln_plc.data.q)
-
             if cmd.command == "PID":
                 # calc PID on mean
-                pid_out = pid_ctrl.compute(q_avg.mean, read_time)
+                pid_out = pid_ctrl.compute(plc.FlowData.q_avg, read_time)
                 fan_drive_ctl.set_output_percent(pid_out)
 
             elif cmd.command == "MAN":
@@ -100,9 +100,12 @@ def daq_pid(data_q: queue.Queue, stop_e: threading.Event):
 
             # write to db
             try:
-                data_q.put_nowait({'plc_data': kiln_plc.data, 'cmd':cmd.command, "pid_out":pid_out,
+                data_q.put_nowait({'flow_data': kiln_plc.data, 'cmd':cmd.command, "pid_out":pid_out,
                                    "demanded_rpm":fan_drive_ctl.demanded_rpm,
-                                   "cmd_rpm":fan_drive_ctl.commanded_rpm, 'timestamp': read_time})
+                                   "cmd_rpm":fan_drive_ctl.commanded_rpm,
+                                   'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(
+                                                                                                timespec='milliseconds')
+                                   })
             except queue.Full:
                 logging.warning("Data queue full; dropping data")
 

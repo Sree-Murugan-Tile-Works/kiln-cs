@@ -18,10 +18,17 @@ class Command:
 	def _validate_and_parse(self, command: str):
 		parts = command.split()
 
+		command_type = parts[0]
+
+		if command_type == "OFF":
+			self.command = "OFF"
+			self.value = None
+			return
+
 		if len(parts) < 2:
 			raise ValueError(f"Invalid command format: '{command}'.")
 
-		command_type, command_value = parts[0], parts[1]
+		command_value = parts[1]
 
 		if command_type == "PID":
 			try:
@@ -37,14 +44,13 @@ class Command:
 			except ValueError:
 				raise ValueError(f"Invalid rpm for MAN command: '{command_value}'.")
 
-		elif command_type =="OFF":
-			self.command = "OFF"
-			self.value = None
-
 		# If the command type is not recognized
 		else:
 			raise ValueError(f"Unknown command type: '{command_type}'.")
 
 
 	def __str__(self):
-		return f"{self.command}:{self.value}"
+		if self.command == "OFF":
+			return self.command
+		s = f"{self.command}:{self.value}"
+		return s
