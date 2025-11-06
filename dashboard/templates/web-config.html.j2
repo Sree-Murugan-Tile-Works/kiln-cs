@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Config Admin</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            margin: 20px;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th, td {
+            border-bottom: 1px solid #eee;
+            padding: 8px;
+            vertical-align: top;
+        }
+
+        th {
+            text-align: left;
+            background: #fafafa;
+            position: sticky;
+            top: 0;
+        }
+
+        input[type=text], input[type=number] {
+            padding: 6px 8px;
+            font-size: 0.95rem;
+        }
+
+        .row-actions {
+            white-space: nowrap;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: #0b5;
+            color: white;
+            border-color: #0a4;
+        }
+
+        .btn-secondary {
+            background: #eee;
+        }
+
+        .topbar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .flash {
+            padding: 8px 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .flash.ok {
+            background: #e6ffed;
+            border: 1px solid #a7e8b0;
+        }
+
+        .flash.error {
+            background: #ffecec;
+            border: 1px solid #ff9a9a;
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        }
+    </style>
+</head>
+<body>
+<h1>Configuration Parameters</h1>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+        {% for cat, msg in msgs %}
+            <div class="flash {{ cat }}">{{ msg }}</div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="topbar">
+    <a class="btn" href="{{ url_for('export_json') }}">Export JSON</a>
+</div>
+
+<table>
+    <thead>
+    <tr>
+        <th style="width:20%">Name</th>
+        <th>Description</th>
+        <th style="width:25%">Value</th>
+        <th style="width:20%">Last Updated</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+
+        <tr>
+
+            <td class="mono">{{ r.name }} [{{ r.type }}]</td>
+            <td>
+                {{ r.description or '' }}
+            </td>
+            <td>
+                <form method="post" action="{{ url_for('save_one', name=r.name) }}">
+                    {% set value = {'i': r.int_value, 'f': r.float_value, 's': r.str_value}[r.type] %}
+                    {% set step = '1' if r.type == 'i' else ('any' if r.type == 'f' else None) %}
+                    <input type="hidden" name="name" value="{{ r.name }}"/>
+                    <input
+                            type="{{ 'number' if r.type in ['i','f'] else 'text' }}"
+                            {% if step %}step="{{ step }}"{% endif %}
+                            name="value__{{ r.name }}"
+                            value="{{ value }}"
+                    />
+                    <button class="btn btn-secondary">Save</button>
+                </form>
+            </td>
+            <td class="mono">{{ r.last_updated }}</td>
+        </tr>
+
+    {% endfor %}
+    </tbody>
+</table>
+
+<script>
+
+    function copyRowValues(name, form) {
+        // copy the visible inputs into the quick-save hidden fields
+        const valInput = document.querySelector(`[name="value__${name}"]`);
+        if (valInput) form.querySelector('[name="value"]').value = valInput.value;
+    }
+</script>
+
+</body>
+</html>
