@@ -152,12 +152,13 @@ There is no explicit sim/real toggle today. `KilnPLC.connect()`, `read_all()`, `
 - `fan-ctrl` depends on the `fins` package (Omron FINS protocol) for the eventual PLC link (`fan-ctrl/requirements.txt`).
 - `dashboard` depends on Flask + matplotlib, using the `Agg` backend so it runs headless (`dashboard/requirements.txt`).
 - No real hardware I/O happens yet — `plc.py` is fully stubbed. Once implemented it will need a TCP path to the PLC's FINS port (config default `9600`).
+- Target field hardware: HMI Weintek cMT3072XH (local operator panel, independent of `dashboard/`), PLC Omron CP2E-N30DT1-D (FINS/TCP), fan drive ABB ACS560-01-12A6-4 (VFD), an orifice-plate flow element with two gauge-pressure transmitters (P1 upstream / P2 downstream, both vented to atmosphere) and one temperature sensor. Full detail, including open wiring/comms questions, in `project/hardware-overview.md`.
 
 ---
 
 ## Deployment Notes
 
-_Not yet defined._ There is no documented hardware or remote-server target. Fill this in once the PLC link in `plc.py` is implemented and a deployment target (e.g. a Raspberry Pi or on-prem server near the kiln) is chosen — follow the Deployment Model in `CLAUDE-COMMON.md` (dev machine first, hardware last).
+Field hardware identities are now known (see `project/hardware-overview.md`): Omron CP2E-N30DT1-D PLC, Weintek cMT3072XH HMI, ABB ACS560-01-12A6-4 drive. Still undecided: the PLC↔drive command path (analog reference vs. Modbus), whether the PLC has the analog I/O modules needed for the pressure/temperature transmitters, and where the two Python processes (`fan-ctrl`, `dashboard`) will actually run. Fill in this section once those are settled — follow the Deployment Model in `CLAUDE-COMMON.md` (dev machine first, hardware last).
 
 ---
 

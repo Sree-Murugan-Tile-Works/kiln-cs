@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kiln Control System</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --surface2: #162032;
+  --border: #334155; --text: #e2e8f0; --muted: #94a3b8; --dim: #475569;
+  --green: #16a34a; --yellow: #ca8a04; --red: #dc2626;
+  --blue: #0ea5e9; --orange: #f97316;
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; font-size:14px; }
+a { color:var(--blue); text-decoration:none; }
+
+header {
+  background:var(--surface); border-bottom:1px solid var(--border);
+  padding:10px 16px; display:flex; align-items:center; justify-content:space-between;
+  position:sticky; top:0; z-index:100;
+}
+.hdr-title { font-size:17px; font-weight:700; color:#f1f5f9; letter-spacing:.4px; }
+.hdr-right { display:flex; align-items:center; gap:12px; font-size:12px; color:var(--muted); }
+
+.conn-dot { width:8px; height:8px; border-radius:50%; display:inline-block; vertical-align:middle; }
+.conn-dot.online  { background:var(--green); box-shadow:0 0 5px var(--green); }
+.conn-dot.stale   { background:var(--yellow); }
+.conn-dot.offline { background:var(--red); }
+
+main { max-width:1600px; margin:0 auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 16px; }
+.section-title {
+  font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px;
+  color:var(--muted); margin-bottom:10px; display:flex; align-items:center; gap:8px;
+}
+
+/* ---- Gauges ---- */
+.gauges-row {
+  display:flex; flex-wrap:wrap; gap:16px;
+  align-items:flex-end; justify-content:space-evenly; padding:4px 0 8px;
+}
+.gauge-cell { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.gauge-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); }
+.gauge-cell svg { overflow:visible; display:block; }
+.gauge-cell.dial  svg { width:145px; }
+.gauge-cell.thermo svg { width:68px; }
+.gauge-cell.semi  svg { width:178px; }
+
+/* ---- Readings strip ---- */
+.readings-strip {
+  display:flex; flex-wrap:wrap; gap:6px; border-top:1px solid var(--border);
+  padding-top:8px; margin-top:6px; justify-content:space-evenly;
+}
+.reading-box {
+  display:flex; align-items:baseline; gap:5px;
+  background:var(--surface2); border:1px solid var(--border);
+  border-radius:4px; padding:4px 10px; min-width:120px;
+}
+.rb-label { font-size:11px; color:var(--muted); flex-shrink:0; min-width:52px; }
+.rb-val   { font-family:monospace; font-size:16px; font-weight:700; color:#f1f5f9; flex:1; text-align:right; }
+.rb-unit  { font-size:10px; color:var(--dim); margin-left:2px; }
+
+/* ---- Control row ---- */
+.control-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+/* PID panel */
+.pid-params { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.pid-param {
+  background:var(--surface2); border:1px solid var(--border); border-radius:4px;
+  padding:6px 10px; display:flex; justify-content:space-between; align-items:center;
+}
+.pid-param .pl { font-size:11px; color:var(--muted); }
+.pid-param .pv { font-family:monospace; font-size:15px; font-weight:700; color:#f1f5f9; }
+
+.pid-form { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.pid-form label { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+.pid-form input[type=number] {
+  flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:4px;
+  color:#f1f5f9; padding:5px 8px; font-family:monospace; font-size:14px; max-width:120px;
+}
+.pid-form input:focus { outline:none; border-color:var(--blue); }
+.pid-form-btns { display:flex; gap:8px; margin-top:4px; }
+
+.presets-hdr {
+  display:flex; justify-content:space-between; align-items:center;
+  border-top:1px solid var(--border); padding-top:8px; margin-top:8px;
+  font-size:12px; color:var(--muted);
+}
+.preset-row {
+  display:flex; align-items:center; gap:6px; padding:5px 8px;
+  border:1px solid var(--border); border-radius:4px; margin-bottom:4px;
+  background:var(--surface2); font-size:12px;
+}
+.preset-row .pname { flex:1; font-weight:600; color:#f1f5f9; }
+.preset-row .pvals { color:var(--muted); font-family:monospace; font-size:11px; }
+#save-preset-form {
+  display:flex; gap:6px; align-items:center;
+  margin-top:8px; padding-top:8px; border-top:1px solid var(--border);
+}
+#preset-name-inp {
+  flex:1; background:var(--surface2); border:1px solid var(--border);
+  border-radius:4px; color:#f1f5f9; padding:5px 8px; font-size:13px;
+}
+#preset-name-inp:focus { outline:none; border-color:var(--blue); }
+
+/* Command panel */
+.mode-btns { display:flex; gap:8px; margin-bottom:12px; }
+.mode-btn {
+  flex:1; padding:8px; border-radius:6px; font-weight:600; font-size:13px;
+  cursor:pointer; border:1px solid var(--border); background:var(--surface2);
+  color:var(--muted); transition:all .15s;
+}
+.mode-btn:hover { border-color:var(--blue); color:var(--text); }
+.mode-btn.mpid { background:rgba(22,163,74,.2); border-color:var(--green); color:#4ade80; }
+.mode-btn.mman { background:rgba(202,138,4,.2); border-color:var(--yellow); color:#fbbf24; }
+.mode-btn.moff { background:rgba(220,38,38,.2); border-color:var(--red); color:#f87171; }
+
+.cmd-input label { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-bottom:8px; }
+.cmd-input input[type=number] {
+  flex:1; background:var(--surface2); border:1px solid var(--border);
+  border-radius:4px; color:#f1f5f9; padding:6px 8px; font-family:monospace; font-size:14px;
+}
+.cmd-input input:focus { outline:none; border-color:var(--blue); }
+.cmd-status { font-size:12px; color:var(--muted); margin-top:10px; }
+.cmd-badge {
+  display:inline-block; padding:2px 8px; border-radius:4px;
+  font-family:monospace; font-size:13px; font-weight:600;
+  background:var(--surface2); border:1px solid var(--border); color:#f1f5f9;
+}
+
+/* Charts */
+.charts-row { display:grid; grid-template-columns:3fr 2fr; gap:10px; }
+.chart-wrap { position:relative; height:200px; }
+
+/* Error log */
+.err-header-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.err-badge {
+  display:inline-block; padding:2px 10px; border-radius:12px;
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+}
+.err-badge.ok     { background:rgba(22,163,74,.2); color:#4ade80; border:1px solid var(--green); }
+.err-badge.active { background:rgba(220,38,38,.2); color:#f87171; border:1px solid var(--red); }
+.last-err-msg {
+  font-size:12px; color:var(--muted); margin-bottom:8px; padding:4px 8px;
+  background:var(--surface2); border-radius:4px; border-left:3px solid var(--border);
+}
+.error-table-wrap { overflow-x:auto; }
+.error-table { width:100%; border-collapse:collapse; font-size:12px; }
+.error-table th {
+  text-align:left; padding:6px 10px; border-bottom:1px solid var(--border);
+  color:var(--muted); font-weight:600; font-size:11px;
+  text-transform:uppercase; letter-spacing:.5px;
+}
+.error-table td { padding:5px 10px; border-bottom:1px solid rgba(51,65,85,.5); vertical-align:top; }
+.error-table tr:last-child td { border-bottom:none; }
+.err-ts  { color:var(--dim); font-family:monospace; font-size:11px; }
+.err-code{ color:#f87171; font-family:monospace; font-weight:700; }
+.err-src { color:#fbbf24; font-family:monospace; }
+.err-msg { color:var(--text); }
+.no-data { color:var(--dim); text-align:center; padding:16px; font-family:inherit; }
+
+/* Buttons */
+.btn-primary {
+  padding:7px 16px; background:var(--blue); color:#fff; border:none;
+  border-radius:5px; font-weight:600; font-size:13px; cursor:pointer;
+}
+.btn-primary:hover { opacity:.9; }
+.btn-sm {
+  padding:4px 10px; background:var(--surface2); color:var(--muted);
+  border:1px solid var(--border); border-radius:4px; font-size:12px; cursor:pointer;
+}
+.btn-sm:hover { border-color:var(--blue); color:var(--text); }
+.btn-accent {
+  padding:4px 10px; background:rgba(14,165,233,.15); color:var(--blue);
+  border:1px solid var(--blue); border-radius:4px; font-size:12px; cursor:pointer;
+}
+.btn-accent:hover { background:rgba(14,165,233,.25); }
+.btn-danger {
+  padding:3px 8px; background:rgba(220,38,38,.15); color:#f87171;
+  border:1px solid rgba(220,38,38,.4); border-radius:4px; font-size:11px; cursor:pointer;
+}
+.btn-danger:hover { background:rgba(220,38,38,.25); }
+.hidden { display:none !important; }
+
+#toast {
+  position:fixed; bottom:20px; right:20px; padding:10px 18px; border-radius:6px;
+  font-size:13px; font-weight:600; z-index:9999; opacity:0; transition:opacity .3s; pointer-events:none;
+}
+#toast.vis { opacity:1; }
+#toast.ok    { background:rgba(22,163,74,.95); color:#fff; }
+#toast.error { background:rgba(220,38,38,.95); color:#fff; }
+
+@media (max-width:900px) {
+  .control-row { grid-template-columns:1fr; }
+  .charts-row  { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-title">&#9632; Kiln Control System</div>
+  <div class="hdr-right">
+    <span id="conn-dot" class="conn-dot offline"></span>
+    <span id="conn-lbl">Offline</span>
+    &bull;
+    <span id="last-ts">--</span>
+    &bull;
+    <a href="/config">Config Admin</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===== Row 1: Live Readings ===== -->
+  <section class="card">
+    <div class="section-title">Live Readings</div>
+    <div class="gauges-row">
+      <div class="gauge-cell dial">
+        <div class="gauge-label">Pressure 1</div>
+        <svg id="g-p1" viewBox="0 0 200 210"></svg>
+      </div>
+      <div class="gauge-cell dial">
+        <div class="gauge-label">Pressure 2</div>
+        <svg id="g-p2" viewBox="0 0 200 210"></svg>
+      </div>
+      <div class="gauge-cell thermo">
+        <div class="gauge-label">Exhaust Temp</div>
+        <svg id="g-temp" viewBox="0 0 80 205"></svg>
+      </div>
+      <div class="gauge-cell semi">
+        <div class="gauge-label">Flow Q</div>
+        <svg id="g-q" viewBox="0 0 200 145"></svg>
+      </div>
+      <div class="gauge-cell semi">
+        <div class="gauge-label">PID Output</div>
+        <svg id="g-pid" viewBox="0 0 200 145"></svg>
+      </div>
+      <div class="gauge-cell semi">
+        <div class="gauge-label">Motor RPM</div>
+        <svg id="g-rpm" viewBox="0 0 200 145"></svg>
+      </div>
+    </div>
+    <div class="readings-strip">
+      <div class="reading-box"><span class="rb-label">P1</span>      <span class="rb-val" id="rv-p1">--</span>    <span class="rb-unit">Pa</span></div>
+      <div class="reading-box"><span class="rb-label">P2</span>      <span class="rb-val" id="rv-p2">--</span>    <span class="rb-unit">Pa</span></div>
+      <div class="reading-box"><span class="rb-label">Temp</span>    <span class="rb-val" id="rv-temp">--</span>  <span class="rb-unit">&#176;C</span></div>
+      <div class="reading-box"><span class="rb-label">Q avg</span>   <span class="rb-val" id="rv-qavg">--</span> <span class="rb-unit">m&#179;/h</span></div>
+      <div class="reading-box"><span class="rb-label">PID out</span> <span class="rb-val" id="rv-pidout">--</span><span class="rb-unit">%</span></div>
+      <div class="reading-box"><span class="rb-label">Motor RPM</span><span class="rb-val" id="rv-rpm">--</span> <span class="rb-unit">rpm</span></div>
+    </div>
+  </section>
+
+  <!-- ===== Row 2: Control ===== -->
+  <div class="control-row">
+
+    <!-- PID Panel -->
+    <section class="card">
+      <div class="section-title">
+        PID Control
+        <button id="btn-pid-edit" class="btn-sm">Edit</button>
+        <button id="btn-pid-presets" class="btn-sm">Presets &#9660;</button>
+      </div>
+
+      <div id="pid-view">
+        <div class="pid-params">
+          <div class="pid-param"><span class="pl">Kp</span><span class="pv" id="disp-kp">--</span></div>
+          <div class="pid-param"><span class="pl">Ki</span><span class="pv" id="disp-ki">--</span></div>
+          <div class="pid-param"><span class="pl">Kd</span><span class="pv" id="disp-kd">--</span></div>
+          <div class="pid-param"><span class="pl">Setpoint</span><span class="pv" id="disp-sp">--</span></div>
+        </div>
+      </div>
+
+      <div id="pid-edit" class="hidden">
+        <div class="pid-form">
+          <label>Kp        <input type="number" id="inp-kp" step="0.001" min="0"></label>
+          <label>Ki        <input type="number" id="inp-ki" step="0.0001" min="0"></label>
+          <label>Kd        <input type="number" id="inp-kd" step="0.0001" min="0"></label>
+          <label>Setpoint  <input type="number" id="inp-sp" step="0.1"></label>
+          <div class="pid-form-btns">
+            <button id="btn-pid-save" class="btn-primary">Save</button>
+            <button id="btn-pid-cancel" class="btn-sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="pid-presets-panel" class="hidden">
+        <div class="presets-hdr">
+          Saved Presets
+          <button id="btn-show-save-preset" class="btn-accent">+ Save current</button>
+        </div>
+        <div id="presets-list"></div>
+        <div id="save-preset-form" class="hidden">
+          <input type="text" id="preset-name-inp" placeholder="Preset name&#8230;">
+          <button id="btn-do-save-preset" class="btn-primary">Save</button>
+          <button id="btn-cancel-save-preset" class="btn-sm">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Command Panel -->
+    <section class="card">
+      <div class="section-title">Command</div>
+      <div class="mode-btns">
+        <button class="mode-btn" id="mode-pid" data-mode="PID">PID Auto</button>
+        <button class="mode-btn" id="mode-man" data-mode="MAN">Manual</button>
+        <button class="mode-btn" id="mode-off" data-mode="OFF">OFF</button>
+      </div>
+      <div id="cmd-pid-sp" class="cmd-input hidden">
+        <label>Setpoint (m&#179;/h)&nbsp;<input type="number" id="cmd-sp-val" step="0.1" min="0"></label>
+      </div>
+      <div id="cmd-man-rpm" class="cmd-input hidden">
+        <label>Manual RPM&nbsp;<input type="number" id="cmd-rpm-val" step="10" min="0" max="500"></label>
+      </div>
+      <div class="cmd-status">Current command: <span class="cmd-badge" id="cur-cmd-badge">--</span></div>
+      <button id="btn-apply-cmd" class="btn-primary" style="margin-top:12px;width:100%">Apply Command</button>
+    </section>
+
+  </div>
+
+  <!-- ===== Row 3: Charts ===== -->
+  <div class="charts-row">
+    <section class="card">
+      <div class="section-title">Waveform &mdash; Motor RPM &amp; Flow Q</div>
+      <div class="chart-wrap"><canvas id="chart-wave"></canvas></div>
+    </section>
+    <section class="card">
+      <div class="section-title">Exhaust Temperature</div>
+      <div class="chart-wrap"><canvas id="chart-temp-c"></canvas></div>
+    </section>
+  </div>
+
+  <!-- ===== Row 4: Error Log ===== -->
+  <section class="card">
+    <div class="err-header-row">
+      <div class="section-title" style="margin-bottom:0">Error Log</div>
+      <span id="err-badge" class="err-badge ok">No Error</span>
+    </div>
+    <div class="last-err-msg" id="last-err-msg">No errors recorded</div>
+    <div class="error-table-wrap">
+      <table class="error-table">
+        <thead><tr><th>Timestamp (IST)</th><th>Code</th><th>Source</th><th>Message</th></tr></thead>
+        <tbody id="err-tbody">
+          <tr><td colspan="4" class="no-data">No errors in log</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ===================================================================
+// SVG helpers
+// ===================================================================
+const NS = 'http://www.w3.org/2000/svg';
+
+function el(tag, attrs) {
+    const e = document.createElementNS(NS, tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+}
+
+function polarXY(cx, cy, r, deg) {
+    // deg 0 = 12-o'clock, positive clockwise
+    const rad = (deg - 90) * Math.PI / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function arcD(cx, cy, r, a1, a2, sw) {
+    // sw: 1=clockwise, 0=ccw
+    const s = polarXY(cx, cy, r, a1);
+    const e = polarXY(cx, cy, r, a2);
+    const span = ((a2 - a1) % 360 + 360) % 360;
+    const lg = span > 180 ? 1 : 0;
+    return `M${s.x.toFixed(2)} ${s.y.toFixed(2)} A${r} ${r} 0 ${lg} ${sw ?? 1} ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
+}
+
+// ===================================================================
+// GaugeBase  (circular and semicircular dials)
+// ===================================================================
+class GaugeBase {
+    constructor(id, o) {
+        // o: { min, max, unit, cx, cy, r, trackW=12, startDeg, sweepDeg, valY,
+        //      zones:[{from,to,color}] }
+        this.svg = document.getElementById(id);
+        this.o = { trackW: 12, ...o };
+        this.needle = null; this.valTxt = null;
+        if (this.svg) this._build();
+    }
+
+    _build() {
+        const { cx, cy, r, trackW: tw, startDeg: s0, sweepDeg: sw, min, max, unit, valY } = this.o;
+        const endDeg = s0 + sw;
+
+        // Shadow + track
+        this.svg.appendChild(el('path', { d: arcD(cx,cy,r,s0,endDeg-.05), stroke:'#0f172a', 'stroke-width': tw+4, fill:'none','stroke-linecap':'round' }));
+        this.svg.appendChild(el('path', { d: arcD(cx,cy,r,s0,endDeg-.05), stroke:'#334155', 'stroke-width': tw, fill:'none','stroke-linecap':'round' }));
+
+        // Colored zones
+        for (const z of (this.o.zones || [])) {
+            const zs = s0 + ((z.from - min) / (max - min)) * sw;
+            const ze = s0 + ((z.to   - min) / (max - min)) * sw;
+            if (ze <= zs) continue;
+            this.svg.appendChild(el('path', { d: arcD(cx,cy,r,zs,ze-.05), stroke:z.color, 'stroke-width': tw, fill:'none','stroke-linecap':'round', opacity:'0.85' }));
+        }
+
+        // Ticks + labels
+        for (let i = 0; i <= 5; i++) {
+            const pct = i / 5;
+            const td = s0 + pct * sw;
+            const po = polarXY(cx, cy, r + tw/2 + 3, td);
+            const pi = polarXY(cx, cy, r - tw/2 - 2, td);
+            this.svg.appendChild(el('line', { x1:po.x.toFixed(2), y1:po.y.toFixed(2), x2:pi.x.toFixed(2), y2:pi.y.toFixed(2), stroke:'#4b5563','stroke-width':'1.5' }));
+            const lp = polarXY(cx, cy, r + tw/2 + 13, td);
+            const anchor = lp.x < cx - 5 ? 'end' : lp.x > cx + 5 ? 'start' : 'middle';
+            const t = el('text', { x: lp.x.toFixed(2), y: (lp.y + 3.5).toFixed(2), 'text-anchor': anchor, fill:'#64748b', 'font-size':'9', 'font-family':'monospace' });
+            t.textContent = (min + pct * (max - min)).toFixed(0);
+            this.svg.appendChild(t);
+        }
+
+        // Needle
+        const nl = r - tw/2 - 5;
+        this.needle = el('line', { x1:cx, y1:cy, x2:cx, y2:cy - nl, stroke:'#f8fafc', 'stroke-width':'2.5','stroke-linecap':'round' });
+        this.svg.appendChild(this.needle);
+        this.svg.appendChild(el('circle', { cx, cy, r:6, fill:'#475569', stroke:'#64748b','stroke-width':'1.5' }));
+
+        // Value + unit text
+        const vy = valY ?? (cy + r + 16);
+        this.valTxt = el('text', { x:cx, y:vy, 'text-anchor':'middle', fill:'#e2e8f0','font-size':'14','font-family':'monospace','font-weight':'bold' });
+        this.valTxt.textContent = '--';
+        this.svg.appendChild(this.valTxt);
+        if (unit) {
+            const u = el('text', { x:cx, y:vy+14, 'text-anchor':'middle', fill:'#64748b','font-size':'10','font-family':'sans-serif' });
+            u.textContent = unit;
+            this.svg.appendChild(u);
+        }
+
+        this._rot(s0); // park at min
+    }
+
+    _rot(deg) {
+        if (!this.needle) return;
+        this.needle.setAttribute('transform', `rotate(${deg.toFixed(2)},${this.o.cx},${this.o.cy})`);
+    }
+
+    update(v) {
+        if (!this.needle) return;
+        if (v === null || v === undefined || isNaN(+v)) { if (this.valTxt) this.valTxt.textContent = '--'; return; }
+        const { min, max, startDeg: s0, sweepDeg: sw } = this.o;
+        const pct = Math.max(0, Math.min(1, (+v - min) / (max - min)));
+        this._rot(s0 + pct * sw);
+        if (this.valTxt) {
+            const a = Math.abs(+v);
+            this.valTxt.textContent = (+v).toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2);
+        }
+    }
+}
+
+// ===================================================================
+// Thermometer gauge
+// ===================================================================
+function buildThermo(id, { min = 0, max = 250 } = {}) {
+    const svg = document.getElementById(id);
+    if (!svg) return { update: () => {} };
+
+    const cx = 30, tt = 18, tb = 162, th = tb - tt, tw = 16;
+
+    const defs = el('defs');
+    const grad = el('linearGradient', { id:'kcs-tg', x1:'0', y1:'1', x2:'0', y2:'0' });
+    [['0%','#3b82f6'],['40%','#22c55e'],['70%','#eab308'],['100%','#ef4444']]
+        .forEach(([off, c]) => { const s = el('stop', { offset: off, 'stop-color': c }); grad.appendChild(s); });
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+
+    // Scale ticks + labels
+    for (let i = 0; i <= 4; i++) {
+        const pct = i / 4;
+        const y = tb - pct * th;
+        const val = min + pct * (max - min);
+        svg.appendChild(el('line', { x1: cx+tw/2+1, y1: y.toFixed(1), x2: cx+tw/2+6, y2: y.toFixed(1), stroke:'#475569','stroke-width':'1' }));
+        const t = el('text', { x: cx+tw/2+9, y: (y+3.5).toFixed(1), fill:'#64748b','font-size':'9','font-family':'monospace' });
+        t.textContent = val.toFixed(0);
+        svg.appendChild(t);
+    }
+
+    // Tube bg
+    svg.appendChild(el('rect', { x:cx-tw/2, y:tt, width:tw, height:th, rx:tw/2, fill:'#1e293b', stroke:'#334155','stroke-width':'1' }));
+
+    // Fill bar (dynamic)
+    const fill = el('rect', { x:cx-tw/2+1, y:tb, width:tw-2, height:'0', rx:(tw-2)/2, fill:'url(#kcs-tg)' });
+    svg.appendChild(fill);
+
+    // Bulb
+    svg.appendChild(el('circle', { cx, cy:tb+14, r:14, fill:'#1e293b', stroke:'#334155','stroke-width':'1' }));
+    svg.appendChild(el('circle', { cx, cy:tb+14, r:11, fill:'#dc2626' }));
+    svg.appendChild(el('circle', { cx, cy:tb+14, r:6,  fill:'#fca5a5' }));
+
+    // Value text
+    const vt = el('text', { x:cx, y:200, 'text-anchor':'middle', fill:'#e2e8f0','font-size':'12','font-family':'monospace','font-weight':'bold' });
+    vt.textContent = '--';
+    svg.appendChild(vt);
+
+    return {
+        update(v) {
+            if (v === null || v === undefined || isNaN(+v)) {
+                vt.textContent = '--'; fill.setAttribute('y', tb); fill.setAttribute('height', '0'); return;
+            }
+            const pct = Math.max(0, Math.min(1, (+v - min) / (max - min)));
+            const h = Math.round(pct * th);
+            fill.setAttribute('y', tb - h); fill.setAttribute('height', h);
+            vt.textContent = (+v).toFixed(1);
+        }
+    };
+}
+
+// ===================================================================
+// Gauge instances
+// ===================================================================
+const PA_ZONES  = [{ from:0, to:150, color:'#16a34a' }, { from:150, to:200, color:'#ca8a04' }, { from:200, to:250, color:'#dc2626' }];
+const PCT_ZONES = [{ from:0, to:60,  color:'#16a34a' }, { from:60,  to:80,  color:'#ca8a04' }, { from:80,  to:100, color:'#dc2626' }];
+const RPM_ZONES = [{ from:0, to:300, color:'#16a34a' }, { from:300, to:400, color:'#ca8a04' }, { from:400, to:500, color:'#dc2626' }];
+
+const DIAL_OPT  = { cx:100, cy:95,  r:70, trackW:12, startDeg:225, sweepDeg:270, valY:185 };
+const SEMI_OPT  = { cx:100, cy:105, r:68, trackW:12, startDeg:270, sweepDeg:180, valY:128 };
+
+const gauges = {
+    p1:  new GaugeBase('g-p1',  { ...DIAL_OPT, min:0,   max:250, unit:'Pa',   zones:PA_ZONES  }),
+    p2:  new GaugeBase('g-p2',  { ...DIAL_OPT, min:0,   max:250, unit:'Pa',   zones:PA_ZONES  }),
+    q:   new GaugeBase('g-q',   { ...SEMI_OPT, min:0,   max:100, unit:'m³/h', zones:PCT_ZONES }),
+    pid: new GaugeBase('g-pid', { ...SEMI_OPT, min:0,   max:100, unit:'%',    zones:PCT_ZONES }),
+    rpm: new GaugeBase('g-rpm', { ...SEMI_OPT, min:0,   max:500, unit:'RPM',  zones:RPM_ZONES }),
+    temp: buildThermo('g-temp', { min:0, max:250 }),
+};
+
+// ===================================================================
+// Charts
+// ===================================================================
+const MAX_PTS = 300;
+const cs = { labels:[], rpm:[], q:[], temp:[] }; // shared chart state
+let waveChart, tempCChart;
+
+function initCharts() {
+    if (typeof Chart === 'undefined') {
+        ['chart-wave','chart-temp-c'].forEach(id => {
+            const el2 = document.getElementById(id);
+            if (el2) el2.parentElement.innerHTML = '<p style="color:#64748b;padding:24px;text-align:center">Chart.js unavailable (no internet connection)</p>';
+        });
+        return;
+    }
+
+    const darkGrid = '#1e293b', tc = '#64748b';
+
+    waveChart = new Chart(document.getElementById('chart-wave').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: cs.labels,
+            datasets: [
+                { label:'Motor RPM', data:cs.rpm,  yAxisID:'yR', borderColor:'#22c55e', backgroundColor:'transparent', pointRadius:0, borderWidth:1.5, tension:.2 },
+                { label:'Q avg',     data:cs.q,    yAxisID:'yQ', borderColor:'#ef4444', backgroundColor:'transparent', pointRadius:0, borderWidth:1.5, tension:.2 }
+            ]
+        },
+        options: {
+            responsive:true, maintainAspectRatio:false, animation:false,
+            plugins: { legend:{ display:true, labels:{ color:'#94a3b8', boxWidth:14, font:{size:11} } } },
+            scales: {
+                x:  { ticks:{ color:tc, maxRotation:0, maxTicksLimit:8, font:{size:10} }, grid:{ color:darkGrid } },
+                yR: { position:'left',  min:0, max:500, ticks:{ color:'#22c55e', font:{size:10} }, grid:{ color:darkGrid },           title:{ display:true, text:'RPM', color:'#22c55e', font:{size:10} } },
+                yQ: { position:'right', min:0, max:100, ticks:{ color:'#ef4444', font:{size:10} }, grid:{ drawOnChartArea:false }, title:{ display:true, text:'Q avg',color:'#ef4444', font:{size:10} } }
+            }
+        }
+    });
+
+    tempCChart = new Chart(document.getElementById('chart-temp-c').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: cs.labels,
+            datasets: [{ label:'Exhaust Temp °C', data:cs.temp, yAxisID:'yT', borderColor:'#f97316', backgroundColor:'rgba(249,115,22,.07)', fill:true, pointRadius:0, borderWidth:1.5, tension:.3 }]
+        },
+        options: {
+            responsive:true, maintainAspectRatio:false, animation:false,
+            plugins: { legend:{ display:true, labels:{ color:'#94a3b8', boxWidth:14, font:{size:11} } } },
+            scales: {
+                x:  { ticks:{ color:tc, maxRotation:0, maxTicksLimit:6, font:{size:10} }, grid:{ color:darkGrid } },
+                yT: { position:'left', min:0, max:250, ticks:{ color:'#f97316', font:{size:10} }, grid:{ color:darkGrid }, title:{ display:true, text:'°C', color:'#f97316', font:{size:10} } }
+            }
+        }
+    });
+}
+
+function pushChart(label, rpm, q, temp) {
+    cs.labels.push(label);
+    cs.rpm.push(rpm   != null ? +rpm   : null);
+    cs.q.push(q      != null ? +q     : null);
+    cs.temp.push(temp != null ? +temp  : null);
+    if (cs.labels.length > MAX_PTS) {
+        cs.labels.shift(); cs.rpm.shift(); cs.q.shift(); cs.temp.shift();
+    }
+    if (waveChart) waveChart.update('none');
+    if (tempCChart) tempCChart.update('none');
+}
+
+// ===================================================================
+// Helpers
+// ===================================================================
+function toIST(iso) {
+    if (!iso) return '--';
+    try {
+        return new Date(iso).toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+    } catch { return iso; }
+}
+
+function fmt(v, dp = 1) {
+    return (v === null || v === undefined || isNaN(+v)) ? '--' : (+v).toFixed(dp);
+}
+
+function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let toastT = null;
+function toast(msg, type = 'ok') {
+    const el2 = document.getElementById('toast');
+    el2.textContent = msg; el2.className = `vis ${type}`;
+    clearTimeout(toastT);
+    toastT = setTimeout(() => { el2.className = ''; }, 3500);
+}
+
+// ===================================================================
+// Live poll
+// ===================================================================
+const POLL_MS = 2000;
+let lastTs = null;
+
+function setConn(state, ts) {
+    const dot = document.getElementById('conn-dot');
+    const lbl = document.getElementById('conn-lbl');
+    dot.className = 'conn-dot ' + state;
+    lbl.textContent = state === 'online' ? 'Live' : state === 'stale' ? 'Stale' : 'Offline';
+    if (ts) document.getElementById('last-ts').textContent = toIST(ts);
+}
+
+function applyLive(d) {
+    // Gauges
+    gauges.p1.update(d.p1); gauges.p2.update(d.p2);
+    gauges.temp.update(d.temp); gauges.q.update(d.q_avg);
+    gauges.pid.update(d.pid_out); gauges.rpm.update(d.cmd_rpm);
+    // Strip
+    document.getElementById('rv-p1').textContent     = fmt(d.p1,   1);
+    document.getElementById('rv-p2').textContent     = fmt(d.p2,   1);
+    document.getElementById('rv-temp').textContent   = fmt(d.temp, 1);
+    document.getElementById('rv-qavg').textContent   = fmt(d.q_avg,2);
+    document.getElementById('rv-pidout').textContent = fmt(d.pid_out,1);
+    document.getElementById('rv-rpm').textContent    = fmt(d.cmd_rpm,0);
+    // PID display
+    if (d.pid) applyPidDisplay(d.pid);
+    // Command badge — prefer cur_cmd (configured) over command (last executed, lags by RELOAD_CFG_IN)
+    const displayCmd = d.cur_cmd || d.command || '';
+    document.getElementById('cur-cmd-badge').textContent = displayCmd || '--';
+    const mode = (d.command || '').split(' ')[0].toUpperCase();
+    ['mode-pid','mode-man','mode-off'].forEach(id => document.getElementById(id).className = 'mode-btn');
+    if      (mode === 'PID') document.getElementById('mode-pid').classList.add('mpid');
+    else if (mode === 'MAN') document.getElementById('mode-man').classList.add('mman');
+    else                     document.getElementById('mode-off').classList.add('moff');
+    // Chart
+    if (d.timestamp && d.timestamp !== lastTs) {
+        lastTs = d.timestamp;
+        pushChart(toIST(d.timestamp), d.cmd_rpm, d.q_avg, d.temp);
+    }
+}
+
+async function livePoll() {
+    try {
+        const r = await fetch('/api/live');
+        if (!r.ok) { setConn('offline', null); return; }
+        const d = await r.json();
+        if (d.timestamp) {
+            const ageMs = Date.now() - new Date(d.timestamp).getTime();
+            setConn(ageMs < 15000 ? 'online' : 'stale', d.timestamp);
+        } else {
+            setConn('offline', null);
+        }
+        applyLive(d);
+    } catch { setConn('offline', null); }
+}
+
+async function loadHistory() {
+    try {
+        const r = await fetch('/api/history?minutes=60');
+        if (!r.ok) return;
+        const { rows } = await r.json();
+        if (!rows || !rows.length) return;
+        const step = Math.max(1, Math.floor(rows.length / MAX_PTS));
+        for (let i = 0; i < rows.length; i += step) {
+            const row = rows[i];
+            pushChart(toIST(row.timestamp), row.cmd_rpm, row.q_avg, row.temp);
+        }
+    } catch (e) { console.warn('loadHistory:', e); }
+}
+
+// ===================================================================
+// PID display
+// ===================================================================
+function applyPidDisplay(pid) {
+    document.getElementById('disp-kp').textContent = pid.kp       != null ? (+pid.kp).toFixed(4)       : '--';
+    document.getElementById('disp-ki').textContent = pid.ki       != null ? (+pid.ki).toFixed(4)       : '--';
+    document.getElementById('disp-kd').textContent = pid.kd       != null ? (+pid.kd).toFixed(4)       : '--';
+    document.getElementById('disp-sp').textContent = pid.set_point!= null ? (+pid.set_point).toFixed(2): '--';
+}
+
+// ===================================================================
+// PID Edit
+// ===================================================================
+let pidEditing = false;
+
+document.getElementById('btn-pid-edit').addEventListener('click', () => {
+    pidEditing = !pidEditing;
+    if (pidEditing) {
+        const fill = (inp, disp) => {
+            const v = document.getElementById(disp).textContent;
+            document.getElementById(inp).value = v === '--' ? '' : v;
+        };
+        fill('inp-kp','disp-kp'); fill('inp-ki','disp-ki');
+        fill('inp-kd','disp-kd'); fill('inp-sp','disp-sp');
+        document.getElementById('pid-view').classList.add('hidden');
+        document.getElementById('pid-edit').classList.remove('hidden');
+        document.getElementById('btn-pid-edit').textContent = 'Cancel';
+    } else {
+        document.getElementById('pid-view').classList.remove('hidden');
+        document.getElementById('pid-edit').classList.add('hidden');
+        document.getElementById('btn-pid-edit').textContent = 'Edit';
+    }
+});
+
+document.getElementById('btn-pid-cancel').addEventListener('click', () => {
+    pidEditing = false;
+    document.getElementById('pid-view').classList.remove('hidden');
+    document.getElementById('pid-edit').classList.add('hidden');
+    document.getElementById('btn-pid-edit').textContent = 'Edit';
+});
+
+document.getElementById('btn-pid-save').addEventListener('click', async () => {
+    const body = { kp: document.getElementById('inp-kp').value, ki: document.getElementById('inp-ki').value,
+                   kd: document.getElementById('inp-kd').value, set_point: document.getElementById('inp-sp').value };
+    for (const [k, v] of Object.entries(body)) {
+        if (v === '' || isNaN(parseFloat(v))) { toast(`${k}: enter a valid number`, 'error'); return; }
+    }
+    try {
+        const r = await fetch('/api/pid', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        const d = await r.json();
+        if (d.ok) {
+            toast('PID parameters saved', 'ok');
+            applyPidDisplay({ kp:body.kp, ki:body.ki, kd:body.kd, set_point:body.set_point });
+            document.getElementById('btn-pid-cancel').click();
+        } else { toast(d.error || (d.errors||[]).join(', '), 'error'); }
+    } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+});
+
+// ===================================================================
+// PID Presets
+// ===================================================================
+let presetsOpen = false;
+
+document.getElementById('btn-pid-presets').addEventListener('click', () => {
+    presetsOpen = !presetsOpen;
+    const panel = document.getElementById('pid-presets-panel');
+    panel.classList.toggle('hidden', !presetsOpen);
+    document.getElementById('btn-pid-presets').textContent = presetsOpen ? 'Presets ▲' : 'Presets ▼';
+    if (presetsOpen) loadPresets();
+});
+
+async function loadPresets() {
+    try {
+        const r = await fetch('/api/pid/presets');
+        if (!r.ok) return;
+        renderPresets(await r.json());
+    } catch (e) { console.warn('loadPresets:', e); }
+}
+
+function renderPresets(list) {
+    const cont = document.getElementById('presets-list');
+    cont.innerHTML = '';
+    if (!list.length) {
+        cont.innerHTML = '<div style="color:#64748b;font-size:12px;padding:6px 0">No saved presets</div>';
+        return;
+    }
+    list.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'preset-row';
+        row.innerHTML = `<span class="pname">${esc(p.name)}</span><span class="pvals">Kp=${p.kp.toFixed(3)} Ki=${p.ki.toFixed(3)} Kd=${p.kd.toFixed(3)} SP=${p.set_point.toFixed(2)}</span>
+            <button class="btn-sm" data-id="${p.id}">Load</button><button class="btn-danger" data-id="${p.id}" title="Delete">&#x2715;</button>`;
+        row.querySelectorAll('button')[0].addEventListener('click', () => applyPreset(p.id));
+        row.querySelectorAll('button')[1].addEventListener('click', () => deletePreset(p.id));
+        cont.appendChild(row);
+    });
+}
+
+async function applyPreset(id) {
+    try {
+        const r = await fetch(`/api/pid/presets/${id}/apply`, { method:'POST' });
+        const d = await r.json();
+        if (d.ok) { toast('Preset applied', 'ok'); applyPidDisplay(d.applied); }
+        else toast(d.error || 'Apply failed', 'error');
+    } catch (e) { toast('Apply failed: ' + e.message, 'error'); }
+}
+
+async function deletePreset(id) {
+    if (!confirm('Delete this preset?')) return;
+    try {
+        const r = await fetch(`/api/pid/presets/${id}`, { method:'DELETE' });
+        const d = await r.json();
+        if (d.ok) { toast('Preset deleted', 'ok'); loadPresets(); }
+        else toast(d.error || 'Delete failed', 'error');
+    } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+}
+
+document.getElementById('btn-show-save-preset').addEventListener('click', () => {
+    document.getElementById('save-preset-form').classList.toggle('hidden');
+    document.getElementById('preset-name-inp').focus();
+});
+
+document.getElementById('btn-cancel-save-preset').addEventListener('click', () => {
+    document.getElementById('save-preset-form').classList.add('hidden');
+    document.getElementById('preset-name-inp').value = '';
+});
+
+document.getElementById('btn-do-save-preset').addEventListener('click', async () => {
+    const name = document.getElementById('preset-name-inp').value.trim();
+    if (!name) { toast('Enter a preset name', 'error'); return; }
+    const body = { name,
+        kp:        parseFloat(document.getElementById('disp-kp').textContent) || 0,
+        ki:        parseFloat(document.getElementById('disp-ki').textContent) || 0,
+        kd:        parseFloat(document.getElementById('disp-kd').textContent) || 0,
+        set_point: parseFloat(document.getElementById('disp-sp').textContent) || 0,
+    };
+    try {
+        const r = await fetch('/api/pid/presets', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        const d = await r.json();
+        if (d.ok) {
+            toast(`Preset "${name}" saved`, 'ok');
+            document.getElementById('save-preset-form').classList.add('hidden');
+            document.getElementById('preset-name-inp').value = '';
+            loadPresets();
+        } else toast(d.error || 'Save failed', 'error');
+    } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+});
+
+// ===================================================================
+// Command panel
+// ===================================================================
+let activeMode = 'OFF';
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        activeMode = btn.dataset.mode;
+        document.getElementById('cmd-pid-sp').classList.toggle('hidden', activeMode !== 'PID');
+        document.getElementById('cmd-man-rpm').classList.toggle('hidden', activeMode !== 'MAN');
+    });
+});
+
+document.getElementById('btn-apply-cmd').addEventListener('click', async () => {
+    const body = { mode: activeMode };
+    if (activeMode === 'PID') {
+        const v = document.getElementById('cmd-sp-val').value;
+        if (!v || isNaN(parseFloat(v))) { toast('Enter a valid setpoint', 'error'); return; }
+        body.set_point = parseFloat(v);
+    } else if (activeMode === 'MAN') {
+        const v = document.getElementById('cmd-rpm-val').value;
+        if (!v || isNaN(parseInt(v))) { toast('Enter a valid RPM', 'error'); return; }
+        body.rpm = parseInt(v);
+    }
+    try {
+        const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        const d = await r.json();
+        if (d.ok) {
+            toast(`Command set: ${d.cmd}`, 'ok');
+            document.getElementById('cur-cmd-badge').textContent = d.cmd;
+        } else { toast(d.error || 'Command failed', 'error'); }
+    } catch (e) { toast('Command failed: ' + e.message, 'error'); }
+});
+
+// ===================================================================
+// Error log
+// ===================================================================
+const ERR_MS = 10000;
+
+async function pollErrors() {
+    try {
+        const r = await fetch('/api/errors?limit=50');
+        if (!r.ok) return;
+        const rows = await r.json();
+        const badge = document.getElementById('err-badge');
+        const lastMsg = document.getElementById('last-err-msg');
+        const tbody = document.getElementById('err-tbody');
+        if (!Array.isArray(rows) || !rows.length) {
+            badge.className = 'err-badge ok'; badge.textContent = 'No Error';
+            lastMsg.textContent = 'No errors recorded';
+            tbody.innerHTML = '<tr><td colspan="4" class="no-data">No errors in log</td></tr>';
+            return;
+        }
+        badge.className = 'err-badge active'; badge.textContent = 'Error';
+        const latest = rows[0];
+        lastMsg.textContent = `[${toIST(latest.timestamp)}] ${latest.source || 'unknown'}: ${latest.message || ''}`;
+        tbody.innerHTML = rows.map(row =>
+            `<tr><td class="err-ts">${esc(toIST(row.timestamp))}</td><td class="err-code">${esc(row.code)}</td><td class="err-src">${esc(row.source||'')}</td><td class="err-msg">${esc(row.message||'')}</td></tr>`
+        ).join('');
+    } catch (e) { console.warn('pollErrors:', e); }
+}
+
+// ===================================================================
+// Init
+// ===================================================================
+initCharts();
+livePoll();
+loadHistory();
+pollErrors();
+setInterval(livePoll, POLL_MS);
+setInterval(pollErrors, ERR_MS);
+</script>
+</body>
+</html>
