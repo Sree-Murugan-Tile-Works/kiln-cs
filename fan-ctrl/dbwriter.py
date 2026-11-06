@@ -5,6 +5,33 @@ import time
 import sqlite3
 
 
+def create_error_log_table(db):
+    conn = sqlite3.connect(db, timeout=10, isolation_level=None)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS error_log (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            code      INTEGER DEFAULT 0,
+            source    TEXT    DEFAULT '',
+            message   TEXT    DEFAULT ''
+        )
+    """)
+    conn.close()
+
+
+def log_error(db, code: int, source: str, message: str):
+    """Insert one error record into error_log. Safe to call from any thread."""
+    try:
+        conn = sqlite3.connect(db, timeout=5, isolation_level=None)
+        conn.execute(
+            "INSERT INTO error_log (code, source, message) VALUES (?, ?, ?)",
+            (int(code), str(source), str(message))
+        )
+        conn.close()
+    except Exception:
+        logging.exception("log_error: failed to write error record")
+
+
 def queue_monitor(q: queue.Queue, stop_e: threading.Event, high_level: int, discard_count: int = 100):
     logging.info("Queue Monitor Thread starting...")
     while not stop_e.is_set():
@@ -14,7 +41,7 @@ def queue_monitor(q: queue.Queue, stop_e: threading.Event, high_level: int, disc
                 logging.warning(f"Queue size exceeding high level; discarding {discard_count} oldest items.")
                 for _ in range(discard_count):
                     try:
-                        q.get_nowait()  # Discard oldest
+                        q.get_nowait()
                     except queue.Empty:
                         break
         except Exception as exc:
@@ -25,34 +52,33 @@ def queue_monitor(q: queue.Queue, stop_e: threading.Event, high_level: int, disc
 
 
 def create_data_tables(db):
-    conn = sqlite3.connect(db, timeout=10, isolation_level=None)  # autocommit mode
+    conn = sqlite3.connect(db, timeout=10, isolation_level=None)
     cur = conn.cursor()
-    # Ensure the table exists
     cur.execute("""
-                CREATE TABLE kiln_data (
-                    timestamp      TEXT PRIMARY KEY,      -- ISO8601 datetime string or epoch; must be UNIQUE for ON CONFLICT
-                    q_value        REAL,                  -- instantaneous flow / rate value
-                    q_avg          REAL,                  -- moving average of q_value
-                    temp           REAL,                  -- temperature reading
-                    pressure1      REAL,                  -- pressure sensor 1
-                    pressure2      REAL,                  -- pressure sensor 2
-                    pid_out        REAL,                  -- PID controller output
-                    demanded_rpm   REAL,                  -- demanded motor RPM
-                    cmd_rpm        REAL,                  -- commanded RPM sent to drive
-                    command        TEXT,                  -- textual representation of current command
-                    remarks        TEXT                   -- optional notes or event flags
-                );
+        CREATE TABLE IF NOT EXISTS kiln_data (
+            timestamp      TEXT PRIMARY KEY,
+            q_value        REAL,
+            q_avg          REAL,
+            temp           REAL,
+            pressure1      REAL,
+            pressure2      REAL,
+            pid_out        REAL,
+            demanded_rpm   REAL,
+            cmd_rpm        REAL,
+            command        TEXT,
+            remarks        TEXT
+        )
     """)
     conn.close()
+    create_error_log_table(db)
 
 
-def db_writer(dq:queue.Queue, stop_e: threading.Event, db):
+def db_writer(dq: queue.Queue, stop_e: threading.Event, db):
     logging.info("DB_Writer Thread starting...")
     conn = None
     try:
-        conn = sqlite3.connect(db, timeout=10, isolation_level=None)  # autocommit mode
+        conn = sqlite3.connect(db, timeout=10, isolation_level=None)
         cur = conn.cursor()
-
         cur.execute("PRAGMA journal_mode=WAL;")
 
         while not stop_e.is_set() or not dq.empty():
@@ -63,42 +89,39 @@ def db_writer(dq:queue.Queue, stop_e: threading.Event, db):
             try:
                 flow_data = item.get('flow_data')
                 insert_sql = """
-                             INSERT INTO kiln_data (timestamp, q_value, q_avg, temp, pressure1, pressure2, pid_out,
-                                                    demanded_rpm, cmd_rpm, command, remarks)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                             ON CONFLICT(timestamp) DO UPDATE SET
-                                    q_value      = excluded.q_value,
-                                    q_avg        = excluded.q_avg,
-                                    temp         = excluded.temp,
-                                    pressure1    = excluded.pressure1,
-                                    pressure2    = excluded.pressure2,
-                                    pid_out      = excluded.pid_out,
-                                    demanded_rpm = excluded.demanded_rpm,
-                                    cmd_rpm      = excluded.cmd_rpm,
-                                    command      = excluded.command,
-                                    remarks      = excluded.remarks;
-                             """
-
-                q_val        = getattr(flow_data, 'q', None)
-                q_avg        = getattr(flow_data,'q_avg', None)
-                temp         = getattr(flow_data, 't', None)
-                p1           = getattr(flow_data, 'p1', None)
-                p2           = getattr(flow_data, 'p2', None)
-                pid_out      = item.get('pid_out')
-                demanded_rpm = item.get('demanded_rpm')
-                cmd_rpm      = item.get('cmd_rpm')
-                command      = item.get('cmd')
-                remarks      = item.get('remarks', "")
-                ts           = item.get('timestamp')
-                cur.execute(insert_sql, (ts, q_val, q_avg, temp, p1, p2, pid_out,
-                                         demanded_rpm, cmd_rpm, command, remarks))
-
+                    INSERT INTO kiln_data
+                        (timestamp, q_value, q_avg, temp, pressure1, pressure2,
+                         pid_out, demanded_rpm, cmd_rpm, command, remarks)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(timestamp) DO UPDATE SET
+                        q_value      = excluded.q_value,
+                        q_avg        = excluded.q_avg,
+                        temp         = excluded.temp,
+                        pressure1    = excluded.pressure1,
+                        pressure2    = excluded.pressure2,
+                        pid_out      = excluded.pid_out,
+                        demanded_rpm = excluded.demanded_rpm,
+                        cmd_rpm      = excluded.cmd_rpm,
+                        command      = excluded.command,
+                        remarks      = excluded.remarks
+                """
+                cur.execute(insert_sql, (
+                    item.get('timestamp'),
+                    getattr(flow_data, 'q', None),
+                    getattr(flow_data, 'q_avg', None),
+                    getattr(flow_data, 't', None),
+                    getattr(flow_data, 'p1', None),
+                    getattr(flow_data, 'p2', None),
+                    item.get('pid_out'),
+                    item.get('demanded_rpm'),
+                    item.get('cmd_rpm'),
+                    item.get('cmd'),
+                    item.get('remarks', ''),
+                ))
             except sqlite3.OperationalError as e:
                 logging.exception(f"SQLite operational error on insert: {e}")
-
             except Exception as e:
                 logging.exception(f"DB insert failed: {e}")
-
 
     except Exception as e:
         logging.exception(f"DB_Writer Thread fatal error: {e}")
@@ -110,5 +133,4 @@ def db_writer(dq:queue.Queue, stop_e: threading.Event, db):
 
 
 if __name__ == "__main__":
-    #create_data_tables("../data/data.db")
     pass
