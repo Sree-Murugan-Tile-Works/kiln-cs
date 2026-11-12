@@ -58,7 +58,7 @@ No automated test suite exists yet (see Known Technical Debt).
 | File | Role |
 |------|------|
 | `fan-ctrl/main.py` | Entry point; spawns the DAQ/PID thread, DB-writer thread, and queue-monitor thread; handles `SIGINT`/`SIGTERM` for clean shutdown |
-| `fan-ctrl/plc.py` | `KilnPLC` — intended Omron FINS/TCP client (`fins` package) for the PLC link; reads P1/P2/T analog inputs, scales them, computes flow, writes motor RPM back |
+| `fan-ctrl/plc.py` | **LEGACY, to be replaced by a sensor-input/drive-output hardware abstraction layer (Pi-based)** — `KilnPLC` — intended Omron FINS/TCP client (`fins` package) for the PLC link; reads P1/P2/T analog inputs, scales them, computes flow, writes motor RPM back |
 | `fan-ctrl/calculation.py` | `Scaler` (raw↔engineering unit conversion), `MovingAverage` (rolling buffer), `calc_pv` (orifice-plate flow equation) |
 | `fan-ctrl/pid.py` | `PIDController` — standard proportional/integral/derivative control |
 | `fan-ctrl/fan_drive.py` | `FanDrive` — converts a PID % output or a manual RPM request into a clamped commanded RPM |
@@ -112,7 +112,7 @@ There is no explicit sim/real toggle today. `KilnPLC.connect()`, `read_all()`, `
 
 ## Process Context
 
-The system measures and controls the exhaust flow of a wood-fired kiln. The exhaust is hot flue gas (N2, CO2, water vapour and other combustion products), ducted on to heat-reuse stages. Flow is driven partly by natural draft (buoyancy and chimney stack effect) and partly by the fan, which makes up the difference. An ambient temperature sensor exists in addition to the duct temperature and P1/P2 sensors. The plate, instruments, kiln and chimney are unchanged; the **control system is being replaced first**, and a visual GUI simulation is planned afterwards. Full detail and open questions: `project/process-description.md`.
+The system measures and controls the exhaust flow of a wood-fired kiln. The exhaust is hot flue gas (N2, CO2, water vapour and other combustion products), ducted on to heat-reuse stages. Flow is driven partly by natural draft (buoyancy and chimney stack effect) and partly by the fan, which makes up the difference. An ambient temperature sensor exists in addition to the duct temperature and P1/P2 sensors. The plate, instruments, kiln and chimney are unchanged; the **control system is being replaced first** (the Omron PLC, Weintek HMI and current software give way to a **Raspberry Pi, a new HMI and a new VFD**), and a visual GUI simulation is planned afterwards. The PLC-specific code (`fan-ctrl/plc.py`, FINS, `plc_*` params) and the PLC/HMI/ACS560 hardware in the docs are **legacy**; the replacement is a hardware abstraction layer (sensor input + drive output) with a simulated twin for every real driver. See `project/hardware-overview.md` §10. Full detail and open questions: `project/process-description.md`.
 
 ---
 
@@ -160,13 +160,14 @@ The system measures and controls the exhaust flow of a wood-fired kiln. The exha
 - `fan-ctrl` depends on the `fins` package (Omron FINS protocol) for the eventual PLC link (`fan-ctrl/requirements.txt`).
 - `dashboard` depends on Flask + matplotlib, using the `Agg` backend so it runs headless (`dashboard/requirements.txt`).
 - No real hardware I/O happens yet — `plc.py` is fully stubbed. Once implemented it will need a TCP path to the PLC's FINS port (config default `9600`).
-- Target field hardware: HMI Weintek cMT3072XH (local operator panel, independent of `dashboard/`), PLC Omron CP2E-N30DT1-D (FINS/TCP), fan drive ABB ACS560-01-12A6-4 (VFD), an orifice-plate flow element with two gauge-pressure transmitters (P1 upstream / P2 downstream, both vented to atmosphere) and one temperature sensor. Full detail, including open wiring/comms questions, in `project/hardware-overview.md`.
+- **Target hardware is changing:** new control system = Raspberry Pi + new HMI + new VFD (models and I/O methods TBD, see `project/hardware-overview.md` §10). The list below describes the **legacy** hardware being replaced.
+- Legacy field hardware: HMI Weintek cMT3072XH (local operator panel, independent of `dashboard/`), PLC Omron CP2E-N30DT1-D (FINS/TCP), fan drive ABB ACS560-01-12A6-4 (VFD), an orifice-plate flow element with two gauge-pressure transmitters (P1 upstream / P2 downstream, both vented to atmosphere) and one temperature sensor. Full detail, including open wiring/comms questions, in `project/hardware-overview.md`.
 
 ---
 
 ## Deployment Notes
 
-Field hardware identities are now known (see `project/hardware-overview.md`): Omron CP2E-N30DT1-D PLC, Weintek cMT3072XH HMI, ABB ACS560-01-12A6-4 drive. Still undecided: the PLC↔drive command path (analog reference vs. Modbus), whether the PLC has the analog I/O modules needed for the pressure/temperature transmitters, and where the two Python processes (`fan-ctrl`, `dashboard`) will actually run. Fill in this section once those are settled — follow the Deployment Model in `CLAUDE-COMMON.md` (dev machine first, hardware last).
+The legacy field hardware (see `project/hardware-overview.md`) is Omron CP2E-N30DT1-D PLC, Weintek cMT3072XH HMI and ABB ACS560-01-12A6-4 drive; all are being replaced by a Raspberry Pi, a new HMI and a new VFD (§10 of that file). Safety and fail-safe design (watchdog, VFD comms-loss behaviour, hardwired E-stop, defined state on reboot) must be settled before commissioning. Still undecided (legacy wording, to be restated for the new system): the PLC↔drive command path (analog reference vs. Modbus), whether the PLC has the analog I/O modules needed for the pressure/temperature transmitters, and where the two Python processes (`fan-ctrl`, `dashboard`) will actually run. Fill in this section once those are settled — follow the Deployment Model in `CLAUDE-COMMON.md` (dev machine first, hardware last).
 
 ---
 

@@ -1,5 +1,12 @@
 # Field Hardware Overview
 
+> **Status (2026-11-13): the PLC-based control system described in §2 and §4–6 is being
+> REPLACED.** The Omron CP2E PLC, the Weintek HMI and the FINS/TCP link are legacy. The new
+> control system is a **Raspberry Pi + a new HMI + a new VFD (variable frequency drive)**,
+> described in §10. The orifice plate, the pressure/temperature instruments, the kiln and the
+> chimney are unchanged (§3 and §7 still apply). Legacy sections are kept as a record of how
+> the current system works and for the cutover.
+
 This document captures the real field hardware behind `kiln-cs`, as described by the
 project owner, and maps each physical device/sensor onto the existing `fan-ctrl`/`dashboard`
 code. Items that are inferred rather than directly confirmed are marked **(verify)**.
@@ -10,7 +17,7 @@ The system controls combustion-air / draft fan speed on a **Hoffman-type continu
 regulating the flow of exhaust gas leaving the kiln by varying fan RPM in response to a
 flow measurement taken across an orifice plate.
 
-## 2. Hardware Inventory
+## 2. Hardware Inventory (current / legacy, being replaced — see §10)
 
 | Component | Model | Role |
 |---|---|---|
@@ -46,7 +53,7 @@ duct  --------[P1 hi]---- orifice plate ----[P2 hi]--------  duct
   near-atmospheric absolute pressures. Whether the orifice-flow formula as coded expects
   gauge or absolute pressures here is worth double-checking — see §7.
 
-## 4. PLC ↔ Python Link (`fan-ctrl/plc.py`)
+## 4. PLC ↔ Python Link (`fan-ctrl/plc.py`) — LEGACY, to be replaced (see §10)
 
 - Protocol: Omron FINS over TCP (`fins.tcp.TCPFinsConnection`), driven by `config_params`:
   `plc_ip`, `plc_fins_port` (default `9600`), `dest_node_address`, `src_node_address`.
@@ -63,7 +70,7 @@ duct  --------[P1 hi]---- orifice plate ----[P2 hi]--------  duct
   analog or pulse speed reference likely requires an analog I/O expansion unit on the CP2E —
   confirm this is fitted/planned.
 
-## 5. HMI Relationship to This Codebase
+## 5. HMI Relationship to This Codebase — LEGACY (Weintek HMI being replaced, see §10)
 
 The Weintek cMT3072XH is a separate, local operator panel that talks to the PLC directly —
 it is **not** the same thing as `dashboard/web.py` (which is a remote/web view reading
@@ -78,7 +85,7 @@ it is **not** the same thing as `dashboard/web.py` (which is a remote/web view r
 - This isn't yet a problem in code (since `plc.py` I/O is fully stubbed), but it's worth
   deciding before wiring up real reads/writes.
 
-## 6. PLC ↔ Drive Link (Omron CP2E ↔ ABB ACS560)
+## 6. PLC ↔ Drive Link (Omron CP2E ↔ ABB ACS560) — LEGACY (see §10)
 
 **(verify — not yet decided)** The ACS560 needs a speed/frequency reference from somewhere.
 Typical options for this drive family:
@@ -180,3 +187,64 @@ reading.
 - [ ] Real-world value/justification for molecular weight `M = 89` (§7, point 3).
 
 These are tracked as follow-up items in `TODO.md`.
+
+> Note (2026-11-13): items in §7 describe how `calc_pv` looks against textbook engineering.
+> The owner has stated the equation was empirically tuned ~20+ years ago, so these are
+> *verification* points, not fixes to apply. See `project/process-description.md` §3.
+
+## 10. New Control System (replacing the PLC, HMI and software)
+
+Decided with the owner on 2026-11-13. Details marked **TBD** are not yet chosen.
+
+| Component | Choice | Notes |
+|---|---|---|
+| Controller | Raspberry Pi | Runs the control daemon and the dashboard. Replaces the Omron CP2E and its ladder logic |
+| HMI | **TBD** | New unit, replaces the Weintek cMT3072XH |
+| Fan drive | **TBD** (new VFD / "variable frequency module") | Replaces or supersedes the ABB ACS560 |
+| Sensors | Unchanged instruments: P1, P2 (gauge-via-DP), duct T, plus ambient T | How they connect to the Pi is **TBD** |
+
+### Open design choices
+
+- **Sensor input to the Pi:** 4–20 mA through an ADC board/HAT, or digital transmitters over
+  Modbus RTU. Needs the transmitter output signals and ranges.
+- **Pi to VFD command path:** Modbus RTU over RS-485 (with status and fault read-back), or an
+  analog 0–10 V / 4–20 mA output through a DAC. Modbus RTU is the working recommendation if
+  the chosen drive supports it.
+- **HMI to Pi connection:** Modbus TCP, a browser kiosk on the Flask dashboard, or a native
+  touchscreen app. Preference: the Pi is the **single authority**; the HMI is a thin client
+  and must not become a second control path (the conflict described in §5).
+
+### Software architecture direction
+
+- The `fan-ctrl` daemon structure is largely kept: DAQ/PID loop, `FanDrive`, `Command`,
+  config in SQLite, DB writer, and the dashboard.
+- `fan-ctrl/plc.py` (FINS, stubbed) is replaced by a **hardware abstraction layer** with two
+  interfaces: *sensor input* (P1, P2, T, ambient T) and *drive output* (speed command, plus
+  status/fault read-back where the drive supports it).
+- Every real driver gets a **simulated twin** with the same interface and data shape so it can
+  run and be tested on the dev machine (dev machine first, hardware last). The simulated
+  drivers are also the base for the planned GUI process simulation.
+- Hardware addresses, ports and serial settings live in configuration (YAML), never in driver
+  code.
+
+### Safety and fail-safe requirements (a Pi is not a PLC)
+
+To be designed before commissioning:
+
+- Software watchdog on the control loop.
+- VFD comms-loss behaviour: the drive must go to a defined safe speed or stop if the Pi stops
+  updating it.
+- Hardwired E-stop and start/stop outside the Pi.
+- A defined fan state when the Pi reboots or loses power.
+- Manual bypass/fallback during commissioning, and an agreed cutover plan (parallel run or
+  hard switch). Logging the old system alongside would give real data for the `calc_pv`
+  golden tests.
+
+### Open questions
+
+- [ ] Sensor interface to the Pi (ADC/HAT vs Modbus transmitters) and transmitter output
+  signals/ranges.
+- [ ] VFD model and Pi-to-VFD command path.
+- [ ] HMI model and how it connects to the Pi.
+- [ ] Behaviour on power cut or hung controller today; hardwired E-stop and manual bypass.
+- [ ] Cutover plan: parallel run or hard switch.

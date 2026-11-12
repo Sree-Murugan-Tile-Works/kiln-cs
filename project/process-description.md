@@ -79,15 +79,20 @@ Rules that follow:
 ## 5. Scope of the current change
 
 - The **plate, the instruments, the kiln and the chimney remain the same.** What is being
-  replaced is the **control system** (the fan-ctrl / PLC / drive side described in
-  `hardware-overview.md`).
+  replaced is the **control system**: the Omron PLC, the Weintek HMI and the current software
+  are replaced by a **Raspberry Pi, a new HMI and a new VFD** (see
+  `hardware-overview.md` §10).
 - Direction agreed with the owner: improve the system slowly, control system first.
+- Safety matters more on a Pi than it did on a PLC: watchdog, VFD comms-loss behaviour,
+  hardwired E-stop and a defined fan state on reboot must be designed before commissioning
+  (`hardware-overview.md` §10).
 
 ## 6. Planned roadmap
 
 1. Document process and context (this file).
-2. Get the new control system working, preserving the existing flow-equation behaviour
-   (characterisation tests first).
+2. Build the new Pi-based control system on the dev machine: sensor-input and drive-output
+   interfaces with simulated drivers, preserving the existing flow-equation behaviour
+   (characterisation tests first). Then choose and add the real drivers.
 3. Later: a **visual, GUI-based simulation** of the whole process (kiln, duct, plate, fan,
    chimney, natural draft) so control behaviour can be developed and tested on the dev
    machine, in line with the "dev machine first, hardware last" rule.
@@ -114,5 +119,10 @@ review before any implementation.
 - [ ] Does any record of the old system exist (original equation, constants, logged
   P1/P2/T/Q data)? Is the `calculation.py` `__main__` example a real operating point?
 - [ ] Is the formula to stay frozen long term, or eventually re-derived and recalibrated?
-- [ ] What exactly is changing in the "control system" (hardware, software, both)?
+- [x] What is changing in the "control system"? Answered: PLC and software replaced by a Pi,
+  a new HMI and a new VFD (2026-11-13).
+- [ ] Sensor interface to the Pi, VFD model and command path, HMI model and connection
+  (see `hardware-overview.md` §10).
+- [ ] Behaviour on power cut or hung controller today; hardwired E-stop and manual bypass.
+- [ ] Cutover plan: parallel run or hard switch.
 - [ ] Barometer available, or use a configured `P_atm` constant?
