@@ -5,7 +5,6 @@ Kiln Control System — Dashboard Web Application
 Run (dev):
     flask --app web run -h 0.0.0.0 -p 5001 --debug
 
-
 Run (prod):
     gunicorn -w 2 -b 0.0.0.0:5001 web:app
 
