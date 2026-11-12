@@ -110,6 +110,12 @@ There is no explicit sim/real toggle today. `KilnPLC.connect()`, `read_all()`, `
 
 ---
 
+## Process Context
+
+The system measures and controls the exhaust flow of a wood-fired kiln. The exhaust is hot flue gas (N2, CO2, water vapour and other combustion products), ducted on to heat-reuse stages. Flow is driven partly by natural draft (buoyancy and chimney stack effect) and partly by the fan, which makes up the difference. An ambient temperature sensor exists in addition to the duct temperature and P1/P2 sensors. The plate, instruments, kiln and chimney are unchanged; the **control system is being replaced first**, and a visual GUI simulation is planned afterwards. Full detail and open questions: `project/process-description.md`.
+
+---
+
 ## Key Modules
 
 - `plc.KilnPLC(cfg)` — `set_cfg(cfg)`, `connect()` (raises `ConnectionError` after `MAX_RETRIES` attempts with backoff), `read_all() -> bool`, `write()`, `write_watchdog()`, `close()`. Exposes `.data: FlowData` and `.com_ok: bool`.
@@ -134,6 +140,8 @@ There is no explicit sim/real toggle today. `KilnPLC.connect()`, `read_all()`, `
 - **Config value typing** — always go through `config.get_param` / `config.set_param` / `config.load_config_from_db` rather than reading the `int_value`/`float_value`/`str_value` columns directly; which column is populated depends on the row's `type`.
 - **`cur_cmd`** — free-text command parsed by `command.Command`: `"PID <setpoint>"`, `"MAN <rpm>"`, or `"OFF"`. Invalid strings should fail closed to `OFF` (see `main.parse_cmd`).
 - **Flow calculation (`calculation.calc_pv`)** — orifice-plate equation: `Q = C * A2 * sqrt(2*Z*R*T/M * K/(K-1) * ((P2/P1)^(2/K) - (P2/P1)^((K+1)/K)) * 1000)`. The constants (`c`, `a2`, `z`, `r`, `m`, `k`) come from `config_params`; `T` must be in the units those constants assume.
+- **`calc_pv` is a legacy empirical formula** — it was tweaked ~20+ years ago in the old system to give the desired results and is not exact engineering units. Do **not** normalise its constants, units or the `* 1000` factor to textbook values. Preserve behaviour; add golden/characterisation tests before any change. See `project/process-description.md` §3.
+- **Pressure sensors are gauge-via-DP** — P1/P2 are differential transmitters with the low side open to room, so they read gauge pressure, not true absolute. Never describe them as absolute in code or docs.
 - **Two independent RPM ranges** — PID output is first mapped into `[pid_min_rpm, pid_max_rpm]` (`FanDrive.set_output_percent`), then clamped again to `[motor_min_rpm, motor_max_rpm]` (`clamp_motor_rpm`). Both ranges are configured separately and don't have to match.
 - **`CONFIG_DB` / `DATA_DB` env vars** — override the default relative paths `../data/config.db` / `../data/data.db`, used by both `fan-ctrl/main.py` and `dashboard/web.py`. Both processes must point at the same files to see each other's data.
 
@@ -165,6 +173,7 @@ Field hardware identities are now known (see `project/hardware-overview.md`): Om
 ## Known Technical Debt
 
 - 🔴 `fan-ctrl/plc.py` — `connect()` opens a `fins.tcp.TCPFinsConnection` but `read_all()`/`write()`/`read_dm()`/`write_dm()` never call into it; they return hardcoded raw values (`p1_raw = 4500`, `p2_raw = 4200`, `t_raw = 3360`). The PLC link is not actually wired up.
+- 🔴 `fan-ctrl/calculation.py: calc_pv` — no characterisation (golden) tests pin its current behaviour; the input units it was tuned for (gauge vs absolute pressure, °C vs K) are unverified. Do not change the formula until these are captured (see `project/process-description.md` §3, §8).
 - 🔴 `fan-ctrl/plc.py: read_all` — has a standing `# todo: detect and handle negative values properly` for analog input readings.
 - 🔴 `fan-ctrl/pid.py: PIDController.set_cfg` — assigns `self.kp = cfg.kp` three times; `ki` and `kd` are never read from config after construction (always `None`/default), so the integral and derivative terms can't be tuned at runtime.
 - 🟡 `dashboard/web.py` — leftover `print()` debug statements in `coerce_for_type` and `config_save_one`.

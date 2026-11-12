@@ -7,6 +7,12 @@
 - [x] Document real field hardware (HMI/PLC/drive/sensors) and the orifice-plate formula mapping in `project/hardware-overview.md`; updated `CLAUDE.md` Platform Constraints/Deployment Notes accordingly
 
 ## Not Started
+- [ ] Gather any old-system records (original equation/constants, logged P1/P2/T/Q data) and confirm whether the `calculation.py` `__main__` example is a real operating point
+- [ ] Add golden/characterisation tests for `calc_pv` pinning current behaviour before any change (see `project/process-description.md` §3)
+- [ ] Answer the open process questions in `project/process-description.md` §8 (plate/fan position, ranges, what the "control system change" covers, ambient T usage)
+- [ ] Write a plan in `project/` for the visual GUI-based process simulation (kiln, duct, plate, fan, chimney, natural draft) for team review before implementing
+- [ ] Decide how the ambient temperature sensor is used (logging, compensation, feed-forward) and add an `ambient_t` input if needed
+- [ ] Flag stuck/implausible pressure readings (tar/condensate fouling of impulse lines) in `plc.py`/`main.py`
 - [ ] Wire up real `fins.tcp` reads/writes in `fan-ctrl/plc.py` (currently stubbed with hardcoded raw values)
 - [x] Fix `fan-ctrl/pid.py: PIDController.set_cfg` — `ki`/`kd` are never read from config (only `kp` is set, three times) — fixed, added `__main__` test block
 - [ ] Handle negative analog-input values in `fan-ctrl/plc.py: read_all` (existing `# todo` in source)
