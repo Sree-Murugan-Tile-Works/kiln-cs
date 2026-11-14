@@ -29,3 +29,19 @@
 - Noticed: CLAUDE.md Known Technical Debt still lists the `pid.py` set_cfg bug, the dashboard
   debug prints and "no tests exist", which `TODO.md` marks as done. Not changed here; flagged
   for a separate cleanup.
+
+## 2026-11-14 — Add vendor-document data for sensors and control unit
+- Read the owner's Google Drive vendor folder (14 files). Fully read: TxRail-USB manual, HMI
+  datasheet, HMI-PLC connection guide. Partly read: CP1W analog unit pages (AD041/DA041 specs)
+  and the first ~130 pages of the ACS560 firmware manual. Not read: the other PDFs.
+- Anonymous curl downloads from Drive returned HTML sign-in pages (folder is not public); those
+  were deleted. Used the authenticated Drive download tool instead: 8 files copied to
+  `project/reference-docs/`; 6 files over its 10 MB limit could not be fetched.
+- `project/hardware-overview.md`: temperature row and controller row updated; new §11 added
+  (TxRail-USB specs and sensor-failure currents, CP1W-AD041/DA041 specs confirming the
+  0–6000 count scaling, ACS560 Modbus/STO/PID facts, HMI datasheet facts, CM5 carrier-board
+  considerations, file index, new open questions).
+- `TODO.md`: new Done entry and Not Started items. No code changed.
+- Decisions: CM5 notes in §11.5 are general knowledge, flagged to verify. Nothing committed.
+- Left open: ACS560 Modbus register map (manual chapter not reached), P1/P2 transmitter model,
+  carrier board, whether to commit the PDFs.
