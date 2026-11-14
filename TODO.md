@@ -1,7 +1,6 @@
 # TODO
 
 ## In Progress
-- [ ] Process simulation GUI (sliders, live plots, schematic) — physics core done and tested; GUI is the next commit
 
 ## Done
 - [x] Add Claude Code support files (`CLAUDE.md`, `CLAUDE-COMMON.md`, `PROJ_STARTER.md`, `.claude/skills/`) — bootstrapped from the `kl-mithunvel/claude` template repo
@@ -11,6 +10,7 @@
 - [x] Read the owner's `docs/Kiln CS Fan PID.pdf` and the reachable vendor PDFs; add §12 (legacy wiring, network, PLC outputs, PIDAT) and corrections to §11 in `project/hardware-overview.md` (2026-11-14)
 - [x] Agree the control architecture with the owner (PLC, HMI and ACS560 stay; Pi added as supervisor; lookup-table fallback; hardwired run/stop and E-stop) and rewrite `project/hardware-overview.md` §10, with matching updates to `.claude/CLAUDE.md`, `project/process-description.md` and `project/implementation-plan.md` (2026-11-14)
 - [x] Process simulation physics core `sim/` (parameter registry with slider metadata, natural draft/chimney/orifice plate/fan model, instruments with PLC counts and faults, closed loop on the real `PIDController`/`FanDrive`/`Command`/`Scaler`) with 131 tests in `tests/sim/` (2026-11-14)
+- [x] Process simulation GUI `sim/server.py` + `sim/static/` (Flask, vanilla JS): 45 sliders built from the parameter registry, PID/manual/off, sensor faults and drift, live schematic and four charts; run with `python -m sim.server` then open http://127.0.0.1:5002; 142 sim tests, full suite 266 passed (2026-11-14)
 - [x] Publish a shareable approval page (who drives what, connections, fail-safe plan, execution plan) — https://claude.ai/artifact/QTxBwFJL4baTap6qoHf4Ba (2026-11-14)
 
 ## Not Started

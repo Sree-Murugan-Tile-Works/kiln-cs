@@ -203,3 +203,23 @@ def test_firing_cycle_swing_is_visible_in_gas_temperature_and_rejected_by_pid():
     assert max(gas) - min(gas) > 40
     late = records[600:]
     assert max(abs(r["flow_true_m3s"] - 4.5) for r in late) < 0.3
+
+
+# --------------------------------------------------------------------------- bumpless start
+def test_switching_into_pid_does_not_kick_the_fan():
+    loop = ClosedLoop(quiet(), "MAN 900")
+    run(loop, 120)
+    loop.set_command("PID 4.2")        # close to what 900 rpm already delivers
+    first = loop.step()
+    assert first["rpm_commanded"] == pytest.approx(900, abs=60)
+
+
+def test_recovery_from_a_sensor_fault_resumes_near_the_safe_speed():
+    loop = ClosedLoop(quiet(safe_rpm=600), "PID 4.0")
+    run(loop, 100)
+    loop.set_fault("p1", FAULT_OPEN)
+    run(loop, 30)
+    loop.set_fault("p1", FAULT_NONE)
+    first = loop.step()
+    assert first["status"] == "PID"
+    assert first["rpm_commanded"] == pytest.approx(600, abs=100)

@@ -111,6 +111,7 @@ class ClosedLoop:
         flow = estimate_flow(p, eng["p1"], eng["p2"], eng["t"])
 
         mode = self.command.command
+        entering_pid = mode == "PID" and self._last_mode != "PID"
         if mode != self._last_mode:
             self.pid.reset()
             self._last_mode = mode
@@ -125,10 +126,27 @@ class ClosedLoop:
         span = p.flow_span_m3s
         self.pid.set_cfg(AttrDict({"kp": p.kp, "ki": p.ki, "kd": p.kd,
                                    "set_point": self.command.value / span}))
+        if entering_pid:
+            self._bumpless_start(flow / span)
         raw = self.pid.compute(flow / span, self.time_s)
         self.drive.set_output_percent(max(0.0, min(1.0, raw)))
         self._anti_windup(raw)
         return "PID", flow, raw
+
+    def _bumpless_start(self, pv_normalised: float) -> None:
+        """
+        Start the PID at the fan speed it is already running at instead of at zero, so switching into
+        PID (or recovering from a sensor fault) does not kick the fan. ``PIDController`` is positional
+        with no bumpless transfer, so the integral term is pre-loaded here (simulation-side only):
+        first output = kp*error + ki*integral = current speed as a fraction of the PID range.
+        """
+        p = self.p
+        if p.ki <= 0.0 or p.pid_max_rpm <= p.pid_min_rpm:
+            return
+        fraction = (self.drive.commanded_rpm - p.pid_min_rpm) / (p.pid_max_rpm - p.pid_min_rpm)
+        fraction = max(0.0, min(1.0, fraction))
+        error = self.pid.set_point - pv_normalised
+        self.pid._integral = (fraction - p.kp * error) / p.ki
 
     def _anti_windup(self, raw: float) -> None:
         """
@@ -180,6 +198,7 @@ class ClosedLoop:
             "draft_pa": op.draft_pa, "fan_dp_pa": op.fan_dp_pa,
             "t_gas_c": op.t_plate_c, "t_ambient_c": t_amb,
             "t_chimney_mean_c": op.t_chimney_mean_c, "t_chimney_top_c": op.t_chimney_top_c,
+            "t_fan_in_c": op.t_fan_in_c,
             "counts_p1": counts["p1"], "counts_p2": counts["p2"], "counts_t": counts["t"],
             "stalled": op.stalled,
         }

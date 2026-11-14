@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kiln Process Simulation</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>Kiln process simulation</h1>
+  <div class="chips">
+    <span class="chip" id="chip-time">t = 0 s</span>
+    <span class="chip" id="chip-status">starting…</span>
+    <span class="chip muted">placeholder parameters, not site data</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="panel params" aria-label="Parameters">
+    <div class="panel-head">
+      <h2>Parameters</h2>
+      <button id="btn-defaults" class="small" title="Put every slider back to its default value">Defaults</button>
+    </div>
+    <div id="groups"></div>
+  </aside>
+
+  <main class="stage">
+    <section class="panel controls" aria-label="Controls">
+      <div class="ctl-group">
+        <span class="ctl-label">Mode</span>
+        <div class="segmented" id="mode-seg" role="group" aria-label="Control mode">
+          <button data-mode="PID" class="active">PID flow</button>
+          <button data-mode="MAN">Manual rpm</button>
+          <button data-mode="OFF" title="OFF means safe speed: the Pi never stops the fan">Off (safe speed)</button>
+        </div>
+      </div>
+      <div class="ctl-group grow" id="grp-sp">
+        <label class="ctl-label" for="sp">Flow setpoint <b id="sp-val">4.5</b> m³/s</label>
+        <input type="range" id="sp" min="0.5" max="9" step="0.1" value="4.5">
+      </div>
+      <div class="ctl-group grow" id="grp-man" hidden>
+        <label class="ctl-label" for="man">Manual speed <b id="man-val">800</b> rpm</label>
+        <input type="range" id="man" min="0" max="1800" step="10" value="800">
+      </div>
+      <div class="ctl-group">
+        <span class="ctl-label">Run</span>
+        <div class="row">
+          <button id="btn-run">Pause</button>
+          <button id="btn-reset" title="Restart the simulation (sliders are kept)">Restart</button>
+          <label class="inline">speed
+            <select id="speed"></select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="kpis" aria-label="Live values">
+      <div class="kpi"><span>Flow (true)</span><b id="k-true">–</b><i>m³/s</i></div>
+      <div class="kpi"><span>Flow (controller sees)</span><b id="k-est">–</b><i>m³/s</i></div>
+      <div class="kpi"><span>Natural draft alone</span><b id="k-nat">–</b><i>m³/s</i></div>
+      <div class="kpi"><span>Fan speed</span><b id="k-rpm">–</b><i>rpm</i></div>
+      <div class="kpi"><span>PID output</span><b id="k-pid">–</b><i>%</i></div>
+    </section>
+
+    <section class="panel schematic" aria-label="Process schematic">
+      <svg id="svg" viewBox="0 0 900 250" role="img" aria-label="Kiln, orifice plate, heat reuse, fan and chimney">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" class="arrow-head"/>
+          </marker>
+        </defs>
+        <!-- kiln -->
+        <rect x="14" y="108" width="116" height="104" rx="8" class="box"/>
+        <text x="72" y="134" class="label" text-anchor="middle">Kiln</text>
+        <text x="72" y="160" class="num" text-anchor="middle"><tspan id="s-tgas">–</tspan> °C</text>
+        <text x="72" y="180" class="sub" text-anchor="middle">gas at plate</text>
+        <text x="72" y="202" class="sub" text-anchor="middle">kiln <tspan id="s-kiln">0</tspan> Pa</text>
+        <!-- duct -->
+        <path d="M130 160 H740" class="duct"/>
+        <path id="flowline" d="M130 160 H740" class="flowline" marker-end="url(#arrow)"/>
+        <!-- orifice plate -->
+        <rect x="296" y="140" width="8" height="12" class="plate"/>
+        <rect x="296" y="168" width="8" height="12" class="plate"/>
+        <text x="300" y="122" class="label" text-anchor="middle">Orifice plate</text>
+        <text x="268" y="100" class="sub" text-anchor="end">P1 <tspan id="s-p1" class="numi">–</tspan> Pa</text>
+        <text x="332" y="100" class="sub" text-anchor="start">P2 <tspan id="s-p2" class="numi">–</tspan> Pa</text>
+        <path d="M280 104 V138 M320 104 V138" class="tap"/>
+        <text x="300" y="206" class="sub" text-anchor="middle">ΔP <tspan id="s-dp" class="numi">–</tspan> Pa</text>
+        <text x="300" y="224" class="sub" text-anchor="middle">Q <tspan id="s-q" class="numi">–</tspan> m³/s</text>
+        <!-- heat reuse -->
+        <rect x="410" y="124" width="150" height="72" rx="8" class="box dashed"/>
+        <text x="485" y="150" class="label" text-anchor="middle">Heat reuse</text>
+        <text x="485" y="172" class="sub" text-anchor="middle">gas leaves at <tspan id="s-tfan">–</tspan> °C</text>
+        <!-- fan -->
+        <g transform="translate(650 160)">
+          <circle r="36" class="box"/>
+          <g id="fan-blades" class="blades">
+            <path d="M0 0 L0 -30 M0 0 L26 15 M0 0 L-26 15" class="blade"/>
+          </g>
+          <circle r="4" class="hub"/>
+        </g>
+        <text x="650" y="216" class="num" text-anchor="middle"><tspan id="s-rpm">–</tspan> rpm</text>
+        <text x="650" y="234" class="sub" text-anchor="middle">fan adds <tspan id="s-fandp" class="numi">–</tspan> Pa</text>
+        <!-- chimney -->
+        <path d="M740 178 V50 H880 V178 Z" class="box chimney"/>
+        <text x="810" y="74" class="label" text-anchor="middle">Chimney</text>
+        <text x="810" y="98" class="num" text-anchor="middle">draft <tspan id="s-draft">–</tspan> Pa</text>
+        <text x="810" y="118" class="sub" text-anchor="middle">gas mean <tspan id="s-tchim">–</tspan> °C</text>
+        <text x="810" y="136" class="sub" text-anchor="middle">gas at top <tspan id="s-ttop">–</tspan> °C</text>
+        <text x="810" y="160" class="sub" text-anchor="middle">outside air <tspan id="s-tamb">–</tspan> °C</text>
+        <path d="M810 46 q-8 -9 0 -17 q8 -8 0 -17" class="smoke"/>
+      </svg>
+    </section>
+
+    <section class="panel faults" aria-label="Sensor faults">
+      <h2>Sensor faults and drift</h2>
+      <div id="fault-rows"></div>
+    </section>
+
+    <section class="charts" aria-label="Charts">
+      <div class="toolbar">
+        <label class="inline">history shown
+          <select id="window">
+            <option value="120">2 min</option>
+            <option value="600" selected>10 min</option>
+            <option value="1800">30 min</option>
+            <option value="3600">60 min</option>
+          </select>
+        </label>
+      </div>
+      <div id="chart-host"></div>
+    </section>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

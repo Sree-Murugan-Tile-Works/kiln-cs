@@ -67,3 +67,10 @@
 - Decisions: flow estimate in the loop is a clean orifice equation, NOT `calc_pv` (its units are unverified and its constants must not be touched); P1/P2 are gauge and go negative under suction; incompressible gas for the pressure balance; a stopped fan is a passive restriction; anti-windup lives in the sim wrapper because `PIDController` has none. All parameter values are placeholders, not site data.
 - Left: GUI (next), legacy `calc_pv` in the loop, PLC/drive twins and failure drills.
 
+## 2026-11-14 (night, later) — Process simulation GUI
+- Added `sim/server.py` (Flask; background runner thread steps the loop at 1x/5x/20x/60x/200x; endpoints /api/specs, /api/state, /api/params, /api/command, /api/fault, /api/control) and `sim/static/{index.html,style.css,app.js}` (sliders generated from the registry, mode/setpoint controls, fault injection, SVG schematic with fan and flow animation tied to the real rpm/flow, four canvas charts with hover readout, light/dark theme). Run: `python -m sim.server`, open http://127.0.0.1:5002.
+- Checked it by running the server and rendering the page with headless Chrome (the Claude-in-Chrome extension was not connected, so no clicking; scenarios were driven through the API and the page screenshotted). Verified: sliders reflect and change the physics (cold front + taller chimney raised natural flow above the setpoint, fan pinned at its minimum; raising the setpoint made the fan take over), P2 open circuit gives the red "Sensor fault -> safe speed" state with the controller flow blank.
+- Fixes found by looking at the screenshots: chimney labels overflowed; chart time axis showed negative times; start-up dipped the fan (the real `PIDController` is positional and has no bumpless transfer) -> `ClosedLoop._bumpless_start` pre-loads the integral on entering PID (simulation-side only), with 2 new tests.
+- Tests: `tests/sim/test_server.py` (10 API tests). Full suite 266 passed.
+- Not done: clicking through the GUI by hand (extension offline); YAML preset files for parameter sets; legacy `calc_pv` in the loop; PLC/drive twins and failure drills.
+
