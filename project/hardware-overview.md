@@ -272,12 +272,19 @@ from those documents; anything marked **(verify)** is inference. Sections 11.1�
 | Isolation | **None** between input, output and the USB port. Do not configure with the sensor connected to the process |
 | Environment | −40 to 85 °C, 0–90 % RH; CE, UKCA |
 
+From the owner's deck (§12.1): the sensor is an **RTD (Pt100 or Pt1000) wired 3-wire** to
+terminals 1, 3 and 4, and the wiring drawing shows the **0–10 V output** variant (output on
+terminals 5/6 and 7/8, supply 12–30 V). If that is how it is actually wired, the temperature
+reaches the PLC as 0–10 V on an AD041 voltage input, not as 4–20 mA **(verify on site)**.
+
 Design implications for the Pi:
 
 - The Pi's fault detection should treat a loop current below 3.8 mA or above 20.5 mA as a
   sensor failure, replacing the legacy `plc_ai_error = 8000` sentinel. Which direction fails
   must match the configured sensor-failure setting.
-- Because the output is a plain 4–20 mA signal, it can feed any 4–20 mA ADC HAT unchanged.
+- The output is configurable. As 4–20 mA it can feed any 4–20 mA ADC HAT unchanged; as 0–10 V
+  (see below) it needs a voltage-input channel. Re-ranging via USB is the simplest way to
+  match whatever the new ADC board wants.
 - The same transmitter family could serve the **ambient** temperature input (Pt100 or NTC).
 
 ### 11.2 Pressure transmitters (P1, P2)
@@ -299,9 +306,21 @@ needed to choose the Pi's ADC and to set `eng_min/max`.
 - The full-scale value of **6000 counts** confirms the `*_plc_min/max = 0..6000` defaults. The
   Pi's ADC does not need to reproduce these counts, but the golden-test data from the old
   system is in them.
-- The legacy `plc_ai_error = 8000` is above the 6000 full scale, consistent with an
-  open-circuit/overrange code **(verify)**.
-- Which expansion unit is actually fitted is still unknown.
+- **Confirmed (owner's deck, §12.2):** with open-circuit detection active, the converted data
+  becomes **8000** (4–20 mA input below 3.2 mA). This is the origin of `plc_ai_error = 8000`.
+- **Negative counts are legitimate.** The AD041 converts −300 to 6300 (hex FED4 to 189C).
+  A 4–20 mA signal between 3.2 and 4 mA gives −300…0 as a two's-complement 16-bit value; a
+  0–10 V input gives negative counts down to −0.5 V. So the old `# todo: detect and handle
+  negative values` in `plc.py` is about two's complement, not an error: values above 0x7FFF
+  must be sign-converted, then 8000 treated as the fault code.
+- Range selection and averaging are set per input in output words n+1 and n+2: range code 00 =
+  −10…10 V, 01 = 0…10 V, 10 = 1…5 V or 4…20 mA, 11 = 0…5 V or 0…20 mA, plus averaging and
+  input-use bits. Which range each channel uses is unknown **(verify in the PLC program)**.
+- Which expansion unit is actually fitted is still unknown. The deck's AD041 pages suggest
+  the CP1W-AD041 is the unit in use.
+- Other units in the same manual: CP1W-MAD11 (2 analog in + 1 analog out, 1/6000, out load
+  600 Ω max for current), CP1W-TS101/TS102 (Pt100/JPt100, ±0.5 % or ±1 °C, 250 ms
+  conversion), CP1W-TS001/TS002 (thermocouples K/J).
 
 ### 11.4 Legacy drive and HMI
 
@@ -356,6 +375,23 @@ Stored in `project/reference-docs/` (fetched 2026-11-14 from the owner's Drive f
 | `HMI PLC Connection Guide OMRON_CJ_CS_CP_Ethernet_FINS_TCP.pdf` | HMI-to-PLC FINS/TCP setup |
 | `Chapter-43-JS-Object-and-JS-Library-UserManual-eng.pdf` | Weintek JS object/library manual |
 
+The owner's own annotated deck is `docs/Kiln CS Fan PID.pdf` (8 slides, see §12).
+
+**How much of each document was actually read (2026-11-14):**
+
+| Document | Read |
+|---|---|
+| `docs/Kiln CS Fan PID.pdf` | All 8 pages (slide images viewed; page 8 is blank) |
+| TxRail-USB manual, HMI datasheet, HMI install guide, HMI–PLC guide | Full text |
+| CP1W unit pages (70 pages) | Text searched for AD/DA/MAD/TS specs; not read cover to cover |
+| CP1E/CP2E instruction reference (530 pages) | Text searched: PIDAT, SCL, PWM, SPED, instruction list; not cover to cover |
+| CP2E hardware and software manuals | Text searched through the Drive reader for model, ports and Modbus/PID sections; not cover to cover. The N30DT1-D is a **sourcing (PNP) transistor output** model on 24 V DC; N-type has built-in Ethernet and takes up to 2 serial option boards |
+| ACS560 quick-start guide | Text searched (default ABB standard macro I/O, no Modbus register data) |
+| ACS560 firmware manual | About the first 236k characters only; the embedded-fieldbus (Modbus) chapter was **not reached** |
+| ACS560 hardware manual (83 MB) | **Not read**: the Drive text reader returned empty content |
+| Weintek JS chapter | First pages only (JS object overview; EasyBuilder Pro V6.10.01, ECMAScript 2017) |
+| SigNow installer, TxRail config zip | Not inspected |
+
 **Not downloaded** (over the 10 MB Drive-tool limit, still only in the owner's Drive folder):
 `ABB ACS560StandardControl Firmware Manual.pdf` (11 MB), `EN_ACS560_HW_J.pdf` (83 MB),
 `EN_ACS560_QISG_K.pdf` (11 MB), `w613_cp2e_hardware_users_manual_en.pdf` (17 MB),
@@ -374,3 +410,123 @@ installer).
 - [ ] CM5 carrier board choice (ADC channels, isolated RS-485, RTC, watchdog, 24 V input,
   DIN rail, storage).
 - [ ] Ambient temperature sensor type and where it is mounted.
+
+## 12. Owner's "Kiln CS Fan PID" Deck: How the Legacy System Is Wired
+
+Source: `docs/Kiln CS Fan PID.pdf` (8 slides, read 2026-11-14). The slides combine vendor
+extracts with the owner's hand sketches. Facts taken directly from printed text are stated
+plainly; readings of the hand-drawn sketch are marked **(interpretation)**.
+
+### 12.1 Slide 1: temperature transmitter wiring
+
+TxRail-USB, Pt100/Pt1000 **3-wire** RTD on terminals 1, 3, 4. The drawing shows the **0–10 V
+output** wiring (output terminals 5/6 and 7/8, load across 7/8), with the supply note
+"10–30 V for 4–20 mA, 12–30 V for 0–10 V". Whether the site actually uses the voltage or the
+current output is **(verify)**. See §11.1.
+
+### 12.2 Slide 2: analog input unit (CP1W-AD041)
+
+- Terminal layout: V IN1…4, I IN1…4, COM1…4 (for a current input the V IN and I IN terminals are linked,
+  per the wiring figures). Shielded twisted pair, shield to FG.
+- Accuracy table incl. extended ranges: current 0.4 % FS at 25 °C, 0.8 % at 0–55 °C, 0.8 %
+  at 55–60 °C, 1 % at −20–0 °C.
+- 4–20 mA: 0–6000 counts, convertible range −300…6300 (FED4…189C hex, two's complement below
+  4 mA). **Below 3.2 mA the open-circuit function sets the data to 8000.** 0–10 V: same counts,
+  −0.5 V…10.5 V, also 8000 on open circuit when enabled.
+- Set-data words n+1/n+2 (bit 15 = 1 to apply) hold per-input range code, averaging and
+  input-use bits.
+
+### 12.3 Slides 3 and 4: PLC outputs
+
+- CP2E-N30DT1-D built-in **pulse outputs**: 4 outputs on **CIO 100.00, 100.01, 101.00, 101.01**,
+  1 Hz–100 kHz, pulse + direction, continuous (speed) or independent (position) mode, with
+  trapezoidal acceleration. **PWM** output: 2–6553.5 Hz in 0.1 Hz steps (or 2–32000 Hz in 1 Hz
+  steps with one output), duty 0–100 % in 0.1 % steps.
+- Terminal layout: inputs on CIO 0.00–0.11 and CIO 1.00–1.05 (18 inputs), outputs on CIO
+  100.00–100.07 and CIO 101.00–101.03 (12 outputs). The `DT1` suffix means sourcing (PNP)
+  transistor outputs (24 V DC supply).
+- **Why this matters:** the CP2E base unit has no analog output. The owner's focus on pulse and
+  PWM outputs suggests the fan speed reference may leave the PLC as **PWM/pulse** rather than as
+  an analog voltage **(verify; a CP1W-DA041 or analog option board would be the alternative)**.
+  Any PWM-to-analog conversion would sit between the PLC and drive terminal AI1.
+
+### 12.4 Slide 5: hand sketch of the architecture and the control path **(interpretation)**
+
+- **Links:** HMI to ACS560 over **RS-485 Modbus**, labelled "status", so the HMI reads drive
+  status directly. HMI to PLC over **Ethernet** (labelled "Modbus / Hostlink"; the connection
+  guide in the folder says Omron FINS/TCP, so the label is probably shorthand). Three sensor
+  signals go into the PLC. The PLC sends a speed signal to the drive. The drive drives the fan
+  motor, with a chimney sketched beside it.
+- **Control path:** `SV` (setpoint) and `PV` go into an error block `e`, then `PID`, then a
+  selector. `PV` is derived from P1, P2 and T (the flow calculation). The selector chooses
+  between **`min_RPM`**, the **PID output** and **`man_RPM`**, and the result is the control
+  signal `CS` sent on to the drive. This matches `FanDrive`/`Command` in `fan-ctrl` (PID and
+  MAN modes, clamped to motor limits). It also suggests a minimum-speed state, which in the
+  Python code is `motor_min_rpm`/`pid_min_rpm` **(verify how the PLC picks `min_RPM`)**.
+- A duct/stack profile sketch (not interpreted).
+
+### 12.5 Slide 6: network and RS-485 wiring (printed)
+
+| Device | Port | Address / pin |
+|---|---|---|
+| Weintek cMT3072XH | LAN 1 | 192.168.16.19 (plant network) |
+| Weintek cMT3072XH | LAN 2 | 192.168.100.1 (direct link to the PLC) |
+| Omron CP2E-N30DT1-D | Ethernet port A | 192.168.100.7 |
+| Weintek CON A (D-sub 9 female) | Pin 1 Data−, pin 2 Data+, pin 5 GND | to ACS560 X5: **30 A−, 29 B+, 31 DGND** |
+
+- The PLC and HMI sit on a private 192.168.100.x link; the HMI also reaches the plant LAN on
+  192.168.16.x. The Pi design must decide which network the new controller joins.
+- **The HMI is wired straight to the ACS560 over Modbus RTU.** The deck labels it "status", but
+  nothing in the hardware stops the HMI from writing drive control words too. This is a second
+  possible control path next to the PLC speed signal (the conflict risk in §5). The new design
+  keeps the Pi as the single authority (§10).
+
+### 12.6 Slide 7: ACS560 default I/O (ABB standard macro)
+
+Printed terminal table, same as the quick-start guide: X1 AI1 external frequency reference
+0–10 V (par. 22.11), AI2 not configured, AO1 output frequency, AO2 output current; X2/X3 DI1
+stop/start (20.03), DI2 forward/reverse, DI3/DI4 constant-frequency selection, DI5 ramp
+selection; relays RO1 Ready run, RO2 Running, RO3 Fault; X5 built-in Modbus RTU (B+, A−,
+DGND) with termination (S100) and bias (S200) switches; X4 Safe Torque Off (both circuits
+closed to run); X11 +24 V auxiliary output (250 mA max). This is the **factory default**; the
+parameters actually set on the installed drive are unknown **(verify with a parameter
+backup from the drive)**.
+
+### 12.7 PLC PID instruction (from the CP1E/CP2E instruction reference)
+
+If the old PID runs in the PLC, the likely instruction is **PIDAT(191)**: PID with autotuning.
+It has more features than `fan-ctrl/pid.py`, so the cutover behaviour will differ unless
+matched:
+
+- Two-degree-of-freedom PID with a target-value filter (parameter α), not the textbook form.
+- Autotuning by the limit-cycle method (stores P, I, D automatically; command bit C+9 bit 15).
+- Parameters: SV, proportional **band** (not gain), integral time, derivative time, sampling
+  period (10 ms units, 0.01–99.99 s), forward/reverse action, output limits, input/output
+  bit range (e.g. 12 bit = 0–0FFF), and an optional 0 % or 50 % output at PV = SV.
+- Bumpless transfer is **not** done on start; limit flags show when output hits the limits.
+- Related scaling and averaging instructions exist (SCL, SCL2, SCL3, AVG) that may sit
+  between the AD041 counts and the flow calculation in the PLC program.
+
+The real constants and the PLC program itself are only in the CX-Programmer project.
+
+### 12.8 What this changes for the design
+
+- `plc_ai_error = 8000` and the `0–6000` scaling are now confirmed (§11.3).
+- Sensor fault detection on the Pi should be per-signal: current out of its valid band
+  (below 3.2 mA is the legacy detection threshold; the TxRail fail-safe is below 3.8 mA or
+  above 20.5 mA), or a voltage equivalent if the 0–10 V output is used.
+- A PID port should record the old proportional band, integral and derivative times, sampling
+  period, forward/reverse sense and limits, because `pid.py` uses gains and a different form.
+- The HMI-to-drive Modbus link means the drive already works over RS-485 Modbus RTU.
+  A Pi-to-drive Modbus RTU link is therefore proven hardware-wise (same X5 port), but only if
+  the HMI is disconnected or turned into a read-only client.
+
+### 12.9 New open questions from the deck
+
+- [ ] How the PLC sends the speed reference to the drive (PWM/pulse, a CP1W-DA041, or other)
+  and what it is wired to on the drive (AI1 or Modbus).
+- [ ] Whether the HMI ever writes to the drive over RS-485 (control words) or only reads status.
+- [ ] Drive parameter backup: which macro and which parameters are set; comms-loss settings.
+- [ ] CX-Programmer project (`.cxp`) and Weintek project (`.cmtp`): DM map, PIDAT constants,
+  scaling, how `min_RPM` is chosen.
+- [ ] Which network the Pi joins (192.168.100.x link or 192.168.16.x plant LAN).

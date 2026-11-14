@@ -175,7 +175,7 @@ The legacy field hardware (see `project/hardware-overview.md`) is Omron CP2E-N30
 
 - 🔴 `fan-ctrl/plc.py` — `connect()` opens a `fins.tcp.TCPFinsConnection` but `read_all()`/`write()`/`read_dm()`/`write_dm()` never call into it; they return hardcoded raw values (`p1_raw = 4500`, `p2_raw = 4200`, `t_raw = 3360`). The PLC link is not actually wired up.
 - 🔴 `fan-ctrl/calculation.py: calc_pv` — no characterisation (golden) tests pin its current behaviour; the input units it was tuned for (gauge vs absolute pressure, °C vs K) are unverified. Do not change the formula until these are captured (see `project/process-description.md` §3, §8).
-- 🔴 `fan-ctrl/plc.py: read_all` — has a standing `# todo: detect and handle negative values properly` for analog input readings.
+- 🔴 `fan-ctrl/plc.py: read_all` — has a standing `# todo: detect and handle negative values properly` for analog input readings. Per the CP1W-AD041 manual (`project/hardware-overview.md` §11.3) raw counts are two's complement in −300…6300, and 8000 is the open-circuit code; carry this into the new sensor-input driver.
 - 🔴 `fan-ctrl/pid.py: PIDController.set_cfg` — assigns `self.kp = cfg.kp` three times; `ki` and `kd` are never read from config after construction (always `None`/default), so the integral and derivative terms can't be tuned at runtime.
 - 🟡 `dashboard/web.py` — leftover `print()` debug statements in `coerce_for_type` and `config_save_one`.
 - 🟡 No automated tests exist for `fan-ctrl` or `dashboard`.

@@ -7,8 +7,12 @@
 - [x] Document real field hardware (HMI/PLC/drive/sensors) and the orifice-plate formula mapping in `project/hardware-overview.md`; updated `CLAUDE.md` Platform Constraints/Deployment Notes accordingly
 
 - [x] Extend `project/hardware-overview.md` with vendor-document data (new §11: TxRail-USB, CP1W analog units, ACS560/HMI facts, CM5 notes) and copy 8 reference files into `project/reference-docs/` (2026-11-14)
+- [x] Read the owner's `docs/Kiln CS Fan PID.pdf` and the reachable vendor PDFs; add §12 (legacy wiring, network, PLC outputs, PIDAT) and corrections to §11 in `project/hardware-overview.md` (2026-11-14)
 
 ## Not Started
+- [ ] Get the CX-Programmer project (`.cxp`) and Weintek project (`.cmtp`) from the site: DM map, PIDAT constants (P band, Ti, Td, sampling period, forward/reverse, limits), scaling, how `min_RPM` is chosen, how the speed reference leaves the PLC
+- [ ] Get a parameter backup from the installed ACS560 (macro, comms-loss action, reference source) and confirm whether the HMI writes drive control words over RS-485
+- [ ] Match or deliberately replace the legacy PIDAT behaviour (2-DOF PID with proportional band) when porting `pid.py` for the Pi; note differences in `project/hardware-overview.md` §12.7
 - [ ] Download the 6 reference files over 10 MB manually from the Drive folder (ACS560 firmware/HW/QISG, CP2E HW/SW manuals, SigNow installer) into `project/reference-docs/`, then read the ACS560 Modbus register map and comms-loss parameters
 - [ ] Decide whether `project/reference-docs/` is committed, git-ignored, or moved to Git LFS (about 9 MB of PDFs now)
 - [ ] Resolve the new open questions in `project/hardware-overview.md` §11.7 (TxRail probe/range, P1/P2 transmitter model, CM5 carrier board, ACS560 retained or not)

@@ -45,3 +45,10 @@
 - Decisions: CM5 notes in §11.5 are general knowledge, flagged to verify. Nothing committed.
 - Left open: ACS560 Modbus register map (manual chapter not reached), P1/P2 transmitter model,
   carrier board, whether to commit the PDFs.
+
+## 2026-11-14 (later) — Read the Fan PID deck and remaining PDFs, update docs
+- Copied `Kiln CS Fan PID.pdf` from Downloads to a new `docs/` folder as asked (the first request said the repo root; the later one said docs folder, so docs/ was used). The PDF is 8 slide images with hand sketches; read by rendering pages with PyMuPDF in a throwaway venv in the scratchpad (project venv and requirements untouched).
+- Read: all 8 deck pages; full text of the TxRail, HMI datasheet/install and HMI-PLC guide; searched the CP1W unit pages, CP1E/CP2E instruction reference, CP2E hardware/software manuals and ACS560 quick-start guide. NOT read: ACS560 hardware manual (Drive reader returned empty), ACS560 firmware manual beyond about the first 236k characters (Modbus chapter not reached), SigNow installer and TxRail zip contents.
+- Findings added to `project/hardware-overview.md`: §12 (deck: temperature transmitter wiring, AD041 detail, PLC pulse/PWM outputs and terminal layout, architecture sketch with HMI-to-ACS560 RS-485 link, network table with IPs, ACS560 default I/O, PIDAT instruction features, design consequences, new questions); §11.1/11.3 corrections (open-circuit code 8000 confirmed at below 3.2 mA, counts are two's complement in -300..6300, 0-10 V output wiring shown, other CP1W units); §11.6 read-coverage table.
+- `.claude/CLAUDE.md`: negative-values debt line now explains the two's complement and 8000 facts. `TODO.md`: new Done entry and three Not Started items.
+- Decisions: sketch readings are marked as interpretation; nothing committed. Left open: how the PLC sends the speed reference, PIDAT constants, drive parameters, ACS560 Modbus register map.
