@@ -70,28 +70,30 @@
             <path d="M0,0 L10,5 L0,10 z" class="arrow-head"/>
           </marker>
         </defs>
-        <!-- kiln -->
-        <rect x="14" y="108" width="116" height="104" rx="8" class="box"/>
-        <text x="72" y="134" class="label" text-anchor="middle">Kiln</text>
-        <text x="72" y="160" class="num" text-anchor="middle"><tspan id="s-tgas">–</tspan> °C</text>
-        <text x="72" y="180" class="sub" text-anchor="middle">gas at plate</text>
-        <text x="72" y="202" class="sub" text-anchor="middle">kiln <tspan id="s-kiln">0</tspan> Pa</text>
+        <!-- kiln: firing zone + internal heat-reuse tunnels, both BEFORE the plate -->
+        <rect x="14" y="100" width="290" height="116" rx="8" class="box"/>
+        <path d="M130 100 V216" class="tap"/>
+        <text x="72" y="126" class="label" text-anchor="middle">Kiln</text>
+        <text x="72" y="152" class="num" text-anchor="middle"><tspan id="s-tgas">–</tspan> °C</text>
+        <text x="72" y="172" class="sub" text-anchor="middle">firing-zone gas</text>
+        <text x="72" y="198" class="sub" text-anchor="middle">kiln <tspan id="s-kiln">0</tspan> Pa</text>
+        <rect x="142" y="112" width="150" height="92" rx="6" class="box dashed"/>
+        <text x="217" y="136" class="label" text-anchor="middle">Heat-reuse tunnels</text>
+        <text x="217" y="160" class="num" text-anchor="middle"><tspan id="s-tfan">–</tspan> °C</text>
+        <text x="217" y="180" class="sub" text-anchor="middle">gas leaving the kiln</text>
+        <text x="217" y="196" class="sub" text-anchor="middle">(what the plate sees)</text>
         <!-- duct -->
-        <path d="M130 160 H740" class="duct"/>
-        <path id="flowline" d="M130 160 H740" class="flowline" marker-end="url(#arrow)"/>
+        <path d="M304 160 H740" class="duct"/>
+        <path id="flowline" d="M304 160 H740" class="flowline" marker-end="url(#arrow)"/>
         <!-- orifice plate -->
-        <rect x="296" y="140" width="8" height="12" class="plate"/>
-        <rect x="296" y="168" width="8" height="12" class="plate"/>
-        <text x="300" y="122" class="label" text-anchor="middle">Orifice plate</text>
-        <text x="268" y="100" class="sub" text-anchor="end">P1 <tspan id="s-p1" class="numi">–</tspan> Pa</text>
-        <text x="332" y="100" class="sub" text-anchor="start">P2 <tspan id="s-p2" class="numi">–</tspan> Pa</text>
-        <path d="M280 104 V138 M320 104 V138" class="tap"/>
-        <text x="300" y="206" class="sub" text-anchor="middle">ΔP <tspan id="s-dp" class="numi">–</tspan> Pa</text>
-        <text x="300" y="224" class="sub" text-anchor="middle">Q <tspan id="s-q" class="numi">–</tspan> m³/s</text>
-        <!-- heat reuse -->
-        <rect x="410" y="124" width="150" height="72" rx="8" class="box dashed"/>
-        <text x="485" y="150" class="label" text-anchor="middle">Heat reuse</text>
-        <text x="485" y="172" class="sub" text-anchor="middle">gas leaves at <tspan id="s-tfan">–</tspan> °C</text>
+        <rect x="416" y="140" width="8" height="12" class="plate"/>
+        <rect x="416" y="168" width="8" height="12" class="plate"/>
+        <text x="420" y="122" class="label" text-anchor="middle">Orifice plate</text>
+        <text x="388" y="100" class="sub" text-anchor="end">P1 <tspan id="s-p1" class="numi">–</tspan> Pa</text>
+        <text x="452" y="100" class="sub" text-anchor="start">P2 <tspan id="s-p2" class="numi">–</tspan> Pa</text>
+        <path d="M400 104 V138 M440 104 V138" class="tap"/>
+        <text x="420" y="204" class="sub" text-anchor="middle">ΔP <tspan id="s-dp" class="numi">–</tspan> Pa</text>
+        <text x="420" y="222" class="sub" text-anchor="middle">Q <tspan id="s-q" class="numi">–</tspan> m³/s</text>
         <!-- fan -->
         <g transform="translate(650 160)">
           <circle r="36" class="box"/>

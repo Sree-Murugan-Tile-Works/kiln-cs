@@ -42,9 +42,9 @@ PARAM_SPECS: list[ParamSpec] = [
               "Barometric pressure. Sets gas density and the absolute level of P1/P2."),
 
     # ------------------------------------------------------------- Kiln / gas
-    ParamSpec("t_gas_c", "Kiln gas", "Gas temperature at plate", "degC", 250, 20, 500, 5,
-              "Flue gas temperature leaving the kiln, measured at the plate. Hotter gas is lighter, so more draft."),
-    ParamSpec("t_gas_swing_k", "Kiln gas", "Gas temperature swing", "K", 0, 0, 80, 1,
+    ParamSpec("t_gas_c", "Kiln gas", "Kiln gas temperature (before heat reuse)", "degC", 250, 20, 500, 5,
+              "Flue gas temperature leaving the firing zone, before the heat-reuse tunnels. Hotter gas is lighter, so more draft."),
+    ParamSpec("t_gas_swing_k", "Kiln gas", "Kiln gas temperature swing", "K", 0, 0, 80, 1,
               "Size of a slow sinusoidal swing in kiln gas temperature (firing cycle, 0 = steady)."),
     ParamSpec("t_gas_period_s", "Kiln gas", "Gas swing period", "s", 900, 60, 3600, 30,
               "Time for one full kiln-temperature swing."),
@@ -57,13 +57,13 @@ PARAM_SPECS: list[ParamSpec] = [
 
     # ------------------------------------------------------------ Duct / reuse
     ParamSpec("duct_diameter_m", "Duct", "Duct diameter", "m", 1.0, 0.5, 1.5, 0.05,
-              "Diameter of the duct that holds the orifice plate."),
-    ParamSpec("k_upstream", "Duct", "Kiln + duct loss (before plate)", "-", 2.0, 0, 10, 0.1,
-              "Dimensionless loss coefficient of everything between the kiln and the plate."),
-    ParamSpec("k_reuse", "Duct", "Heat-reuse loss", "-", 3.0, 0, 15, 0.1,
-              "Dimensionless loss coefficient of the heat-reuse stages (dryers, exchangers, dampers)."),
-    ParamSpec("reuse_extraction", "Duct", "Heat extracted by reuse", "fraction", 0.2, 0, 0.6, 0.01,
-              "Fraction of the gas heat (above ambient) removed by the reuse stages before the fan."),
+              "Diameter of the duct that holds the orifice plate and leads to the fan."),
+    ParamSpec("k_reuse", "Kiln gas", "Heat-reuse tunnel loss", "-", 3.0, 0, 15, 0.1,
+              "Loss coefficient of the kiln's internal heat-reuse tunnels (before the plate). Raises suction at P1."),
+    ParamSpec("reuse_extraction", "Kiln gas", "Heat extracted by reuse", "fraction", 0.2, 0, 0.6, 0.01,
+              "Fraction of the gas heat (above ambient) taken out inside the kiln tunnels before the plate. Colder gas at the plate = less draft."),
+    ParamSpec("k_upstream", "Duct", "Duct loss (kiln exit to plate)", "-", 2.0, 0, 10, 0.1,
+              "Dimensionless loss coefficient of the duct between the kiln tunnels and the plate."),
 
     # --------------------------------------------------------------- Plate
     ParamSpec("plate_beta", "Orifice plate", "Plate beta (bore / duct)", "-", 0.6, 0.3, 0.75, 0.01,

@@ -74,3 +74,9 @@
 - Tests: `tests/sim/test_server.py` (10 API tests). Full suite 266 passed.
 - Not done: clicking through the GUI by hand (extension offline); YAML preset files for parameter sets; legacy `calc_pv` in the loop; PLC/drive twins and failure drills.
 
+## 2026-11-14 (night, later still) — Correct the model: heat reuse is before the plate
+- Owner correction: the hot-air heat reuse happens inside the kiln's own tunnels, BEFORE the orifice plate (not between plate and fan). Order is kiln (with reuse tunnels) -> duct -> plate -> fan -> chimney.
+- `sim/plant.py`: `t_gas_c` is now the gas leaving the firing zone; `plate_temperature()` applies `reuse_extraction` to give the (lower) temperature at the plate, which is also the fan inlet and chimney base temperature; the reuse-tunnel loss now sits upstream of the plate and shows in P1/P2 (not in the plate dP). `OperatingPoint.t_fan_in_c` replaced by `t_kiln_c`. `sim/params.py` labels/groups updated; GUI schematic shows the tunnels inside the kiln box; charts show kiln gas and plate gas separately.
+- Tests: 5 new tests in `tests/sim/test_plant.py`; full suite 271 passed.
+- `project/process-description.md` open question 1 (plate position) is answered by this; left that file's edit to the owner's pending doc changes (see below).
+

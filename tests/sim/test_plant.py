@@ -5,8 +5,8 @@ import pytest
 from sim.gas import density, AIR_MOLAR_MASS_G_MOL
 from sim.instruments import estimate_flow
 from sim.params import make_params
-from sim.plant import (Plant, solve_steady, operating_point, environment, _loss_coefficients,
-                       PERMANENT_LOSS_EXPONENT)
+from sim.plant import (Plant, solve_steady, operating_point, environment, plate_temperature,
+                       _loss_coefficients, PERMANENT_LOSS_EXPONENT)
 
 AMB = 25.0
 
@@ -128,7 +128,7 @@ def test_pressure_balance_closes_at_steady_state(rpm):
     m = op.mass_flow_kg_s
     rho_amb = density(p.p_atm_pa, AMB, AIR_MOLAR_MASS_G_MOL)
     rho_plate = op.rho_plate
-    rho_reuse = density(p.p_atm_pa, (op.t_plate_c + op.t_fan_in_c) / 2, p.gas_molar_mass_g_mol)
+    rho_reuse = density(p.p_atm_pa, (op.t_kiln_c + op.t_plate_c) / 2, p.gas_molar_mass_g_mol)
     rho_chim = density(p.p_atm_pa, op.t_chimney_mean_c, p.gas_molar_mass_g_mol)
     losses = ((k.k_upstream + k.k_plate_loop) / rho_plate + k.k_reuse / rho_reuse + k.k_chimney / rho_chim) * m ** 2
     assert op.draft_pa == pytest.approx(9.80665 * p.chimney_height_m * (rho_amb - rho_chim))
@@ -242,3 +242,40 @@ def test_environment_swings_around_the_base_values():
 def test_operating_point_at_zero_flow_is_quiet():
     op = operating_point(make_params(), 0.0, 0.0, 250, AMB)
     assert op.plate_dp_pa == 0 and op.p1_pa == 0 and op.stalled
+
+
+# --------------------------------------------------------------------------- heat reuse (inside the kiln, before the plate)
+def test_plate_sees_gas_already_cooled_by_the_reuse_tunnels():
+    p = make_params({"reuse_extraction": 0.3})
+    op = solve_steady(p, 0, 250, AMB)
+    assert op.t_kiln_c == 250
+    assert op.t_plate_c == pytest.approx(250 - 0.3 * (250 - AMB))
+    assert plate_temperature(p, 250, AMB) == op.t_plate_c
+
+
+def test_no_reuse_means_plate_temperature_equals_kiln_temperature():
+    op = solve_steady(make_params({"reuse_extraction": 0}), 0, 250, AMB)
+    assert op.t_plate_c == pytest.approx(250)
+
+
+def test_more_heat_reuse_lowers_draft_and_natural_flow():
+    little = solve_steady(make_params({"reuse_extraction": 0.05}), 0, 250, AMB)
+    much = solve_steady(make_params({"reuse_extraction": 0.5}), 0, 250, AMB)
+    assert much.t_chimney_mean_c < little.t_chimney_mean_c
+    assert much.draft_pa < little.draft_pa and much.q_m3_s < little.q_m3_s
+
+
+def test_reuse_tunnel_loss_shows_up_in_p1_not_in_the_plate_dp_at_equal_flow():
+    """The tunnels are upstream of the plate: their loss deepens the suction at P1 and P2 together."""
+    base = solve_steady(make_params({"k_reuse": 0}), 800, 250, AMB)
+    leaky = solve_steady(make_params({"k_reuse": 10}), 800, 250, AMB)
+    assert leaky.q_m3_s < base.q_m3_s                       # more resistance, less flow
+    # at the SAME mass flow the plate dP is unchanged and only P1 moves
+    same_flow = operating_point(make_params({"k_reuse": 10}), base.mass_flow_kg_s, 800, 250, AMB)
+    assert same_flow.plate_dp_pa == pytest.approx(base.plate_dp_pa, rel=0.02)
+    assert same_flow.p1_pa < base.p1_pa - 5
+
+
+def test_fan_inlet_gas_is_at_plate_temperature():
+    op = solve_steady(make_params({"reuse_extraction": 0.4}), 800, 250, AMB)
+    assert op.t_chimney_top_c < op.t_plate_c                # chimney only cools further after the plate

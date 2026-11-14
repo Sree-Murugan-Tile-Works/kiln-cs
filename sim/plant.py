@@ -1,7 +1,11 @@
 """
 Physical model of the kiln exhaust path:
 
-    kiln -> duct -> orifice plate (P1 | P2, T) -> heat-reuse stages -> fan -> chimney -> atmosphere
+    kiln (heat-reuse tunnels inside it) -> duct -> orifice plate (P1 | P2, T) -> fan -> chimney -> atmosphere
+
+The heat reuse happens inside the kiln's own tunnels, BEFORE the plate: the plate and the fan
+already see the cooled gas. ``t_gas_c`` in the parameters is the gas leaving the firing zone;
+the temperature at the plate is lower by the heat the reuse tunnels extract.
 
 How the flow is found
 ---------------------
@@ -51,8 +55,8 @@ class OperatingPoint:
     plate_dp_pa: float       # differential pressure across the plate (P1 - P2)
     p1_pa: float
     p2_pa: float
-    t_plate_c: float
-    t_fan_in_c: float
+    t_kiln_c: float          # gas leaving the firing zone, before the heat-reuse tunnels
+    t_plate_c: float         # gas after heat reuse = temperature at the plate and at the fan inlet
     t_chimney_mean_c: float
     t_chimney_top_c: float
     rho_plate: float
@@ -101,13 +105,19 @@ def _chimney_temps(p, mass_flow: float, t_base_c: float, t_amb_c: float) -> tupl
             t_amb_c + (t_base_c - t_amb_c) * top_factor)
 
 
-def operating_point(p, mass_flow: float, rpm: float, t_gas_c: float, t_amb_c: float) -> OperatingPoint:
+def plate_temperature(p, t_kiln_c: float, t_amb_c: float) -> float:
+    """Gas temperature after the heat-reuse tunnels (which sit before the plate)."""
+    return t_kiln_c - p.reuse_extraction * (t_kiln_c - t_amb_c)
+
+
+def operating_point(p, mass_flow: float, rpm: float, t_kiln_c: float, t_amb_c: float) -> OperatingPoint:
     """Evaluate pressures, temperatures and draft for a given mass flow (steady or transient)."""
     k = _loss_coefficients(p)
-    rho_plate = density(p.p_atm_pa, t_gas_c, p.gas_molar_mass_g_mol)
-    t_fan_in = t_gas_c - p.reuse_extraction * (t_gas_c - t_amb_c)
-    rho_fan = density(p.p_atm_pa, t_fan_in, p.gas_molar_mass_g_mol)
-    t_mean, t_top = _chimney_temps(p, mass_flow, t_fan_in, t_amb_c)
+    t_plate = plate_temperature(p, t_kiln_c, t_amb_c)
+    rho_plate = density(p.p_atm_pa, t_plate, p.gas_molar_mass_g_mol)
+    rho_reuse = density(p.p_atm_pa, (t_kiln_c + t_plate) / 2.0, p.gas_molar_mass_g_mol)
+    rho_fan = rho_plate                     # nothing between the plate and the fan changes the gas
+    t_mean, t_top = _chimney_temps(p, mass_flow, t_plate, t_amb_c)
     rho_amb = density(p.p_atm_pa, t_amb_c, AIR_MOLAR_MASS_G_MOL)
     rho_chim = density(p.p_atm_pa, t_mean, p.gas_molar_mass_g_mol)
 
@@ -116,28 +126,28 @@ def operating_point(p, mass_flow: float, rpm: float, t_gas_c: float, t_amb_c: fl
     fan_dp = (rho_fan / FAN_REF_DENSITY) * (
         p.fan_shutoff_dp_pa * (rpm / p.fan_rated_rpm) ** 2 - k.fan_slope * q_fan ** 2)
     plate_dp = k.k_plate_full * mass_flow ** 2 / rho_plate
-    p1 = p.kiln_gauge_pa - k.k_upstream * mass_flow ** 2 / rho_plate
+    p1 = p.kiln_gauge_pa - (k.k_reuse / rho_reuse + k.k_upstream / rho_plate) * mass_flow ** 2
 
     return OperatingPoint(
         mass_flow_kg_s=mass_flow, q_m3_s=mass_flow / rho_plate, draft_pa=draft, fan_dp_pa=fan_dp,
-        plate_dp_pa=plate_dp, p1_pa=p1, p2_pa=p1 - plate_dp, t_plate_c=t_gas_c, t_fan_in_c=t_fan_in,
+        plate_dp_pa=plate_dp, p1_pa=p1, p2_pa=p1 - plate_dp, t_kiln_c=t_kiln_c, t_plate_c=t_plate,
         t_chimney_mean_c=t_mean, t_chimney_top_c=t_top, rho_plate=rho_plate, stalled=mass_flow <= 0.0)
 
 
 def solve_steady(p, rpm: float, t_gas_c: float, t_amb_c: float) -> OperatingPoint:
-    """Steady-state flow for a fixed fan speed and temperatures."""
+    """Steady-state flow for a fixed fan speed. ``t_gas_c`` is the kiln gas temperature before heat reuse."""
     k = _loss_coefficients(p)
-    rho_plate = density(p.p_atm_pa, t_gas_c, p.gas_molar_mass_g_mol)
-    t_fan_in = t_gas_c - p.reuse_extraction * (t_gas_c - t_amb_c)
-    rho_fan = density(p.p_atm_pa, t_fan_in, p.gas_molar_mass_g_mol)
-    rho_reuse = density(p.p_atm_pa, (t_gas_c + t_fan_in) / 2.0, p.gas_molar_mass_g_mol)
+    t_plate = plate_temperature(p, t_gas_c, t_amb_c)
+    rho_plate = density(p.p_atm_pa, t_plate, p.gas_molar_mass_g_mol)
+    rho_fan = rho_plate
+    rho_reuse = density(p.p_atm_pa, (t_gas_c + t_plate) / 2.0, p.gas_molar_mass_g_mol)
     rho_amb = density(p.p_atm_pa, t_amb_c, AIR_MOLAR_MASS_G_MOL)
     fan_gain = (rho_fan / FAN_REF_DENSITY) * p.fan_shutoff_dp_pa * (rpm / p.fan_rated_rpm) ** 2
     fan_loss_term = k.fan_slope / (FAN_REF_DENSITY * rho_fan)   # fan curve's Q^2 term, in m_dot^2 form
 
     mass_flow = 1.0   # starts on the "warm chimney" branch, not the (unphysical) cold-chimney one
     for _ in range(MAX_ITERATIONS):
-        t_mean, _ = _chimney_temps(p, mass_flow, t_fan_in, t_amb_c)
+        t_mean, _ = _chimney_temps(p, mass_flow, t_plate, t_amb_c)
         rho_chim = density(p.p_atm_pa, t_mean, p.gas_molar_mass_g_mol)
         draft = G * p.chimney_height_m * (rho_amb - rho_chim)
         resistance = ((k.k_upstream + k.k_plate_loop) / rho_plate

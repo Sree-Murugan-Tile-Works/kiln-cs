@@ -196,9 +196,8 @@ class ClosedLoop:
             "pid_output": pid_raw,
             "p1_pa": op.p1_pa, "p2_pa": op.p2_pa, "plate_dp_pa": op.plate_dp_pa,
             "draft_pa": op.draft_pa, "fan_dp_pa": op.fan_dp_pa,
-            "t_gas_c": op.t_plate_c, "t_ambient_c": t_amb,
+            "t_gas_c": op.t_plate_c, "t_kiln_c": op.t_kiln_c, "t_ambient_c": t_amb,
             "t_chimney_mean_c": op.t_chimney_mean_c, "t_chimney_top_c": op.t_chimney_top_c,
-            "t_fan_in_c": op.t_fan_in_c,
             "counts_p1": counts["p1"], "counts_p2": counts["p2"], "counts_t": counts["t"],
             "stalled": op.stalled,
         }
