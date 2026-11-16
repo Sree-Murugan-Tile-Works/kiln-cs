@@ -20,10 +20,13 @@ confirmed are marked **(verify)**; unanswered questions are in §8.
 - Gas flow is measured across an **orifice plate** in the duct, upstream of the fan.
 
 ```
-kiln --> [duct] --> orifice plate (P1 | P2, T) --> [heat-reuse ducts] ... --> fan --> chimney
+kiln (heat-reuse tunnels inside it) --> [duct] --> orifice plate (P1 | P2, T) --> fan --> chimney
 ```
 
-The order of the plate, the heat-reuse branches and the fan is **(verify)** — see §8.
+The heat reuse happens **inside the kiln's own tunnels, before the plate** (owner, 2026-11-14), so the
+plate and fan see gas that has already been cooled and the temperature at the plate is lower than the
+firing-zone temperature. The plate -> fan -> chimney order is as drawn; whether any other branch sits
+between the plate and the fan is still **(verify)** — see §8.
 
 ## 2. Instruments
 
@@ -78,27 +81,32 @@ Rules that follow:
 
 ## 5. Scope of the current change
 
-- The **plate, the instruments, the kiln and the chimney remain the same.** What is being
-  replaced is the **control system**: the Omron PLC, the Weintek HMI and the current software
-  are replaced by a **Raspberry Pi, a new HMI and a new VFD** (see
-  `hardware-overview.md` §10).
+- The **plate, the instruments, the kiln and the chimney remain the same.** What changes is
+  the **control system**. Agreed 2026-11-14 (this replaces the 2026-11-13 idea of swapping the
+  PLC, HMI and VFD): the Omron PLC, the Weintek HMI and the ABB ACS560 **stay**, and a
+  **Raspberry Pi 5 Compute Module is added** to do the flow calculation (the PLC has no square
+  root), logging and the web interface. If the Pi fails the PLC continues from a lookup table
+  (see `hardware-overview.md` §10).
 - Direction agreed with the owner: improve the system slowly, control system first.
-- Safety matters more on a Pi than it did on a PLC: watchdog, VFD comms-loss behaviour,
-  hardwired E-stop and a defined fan state on reboot must be designed before commissioning
-  (`hardware-overview.md` §10).
+- Safety design is explicit because a Pi sits in the loop while healthy: heartbeat and lookup
+  table fallback, fixed safe RPM on sensor failure, drive comms-loss action, hardwired
+  run/stop and E-stop, and the Pi never stops the fan (`hardware-overview.md` §10.5).
 
 ## 6. Planned roadmap
 
 1. Document process and context (this file).
-2. Build the new Pi-based control system on the dev machine: sensor-input and drive-output
-   interfaces with simulated drivers, preserving the existing flow-equation behaviour
-   (characterisation tests first). Then choose and add the real drivers.
+2. Build the Pi supervisor on the dev machine: a simulated PLC link and drive with the same
+   data shape as the real ones, preserving the existing flow-equation behaviour
+   (characterisation tests first), the fallback table generator and failure drills. Then
+   log-only on site, then let the Pi feed the PLC (phases in `hardware-overview.md` §10.8).
 3. Later: a **visual, GUI-based simulation** of the whole process (kiln, duct, plate, fan,
    chimney, natural draft) so control behaviour can be developed and tested on the dev
    machine, in line with the "dev machine first, hardware last" rule.
 
-The simulation is not designed yet. A plan document will be written under `project/` for
-review before any implementation.
+Status 2026-11-14: a first version exists in `sim/` (parametric physics model, closed loop on the
+real PID code, web GUI with sliders; run `python -m sim.server`). How the parameters affect each other
+is written up in `project/simulation-report.md`. All values in it are placeholders until site data is
+available.
 
 ## 7. Open design questions for the control strategy
 
@@ -110,7 +118,8 @@ review before any implementation.
 
 ## 8. Open questions (unanswered)
 
-- [ ] Position of the plate relative to the heat-reuse branches and the fan.
+- [x] Position of the plate relative to the heat-reuse branches: answered 2026-11-14 — the reuse is
+  inside the kiln tunnels, before the plate. Still open: is anything else between the plate and the fan?
 - [ ] Realistic temperature range at the plate.
 - [ ] Transmitter ranges and normal/maximum plate pressure drop; units behind the `±250`
   engineering range.
@@ -119,10 +128,13 @@ review before any implementation.
 - [ ] Does any record of the old system exist (original equation, constants, logged
   P1/P2/T/Q data)? Is the `calculation.py` `__main__` example a real operating point?
 - [ ] Is the formula to stay frozen long term, or eventually re-derived and recalibrated?
-- [x] What is changing in the "control system"? Answered: PLC and software replaced by a Pi,
-  a new HMI and a new VFD (2026-11-13).
-- [ ] Sensor interface to the Pi, VFD model and command path, HMI model and connection
-  (see `hardware-overview.md` §10).
-- [ ] Behaviour on power cut or hung controller today; hardwired E-stop and manual bypass.
-- [ ] Cutover plan: parallel run or hard switch.
+- [x] What is changing in the "control system"? Answered 2026-11-14: PLC, HMI and ACS560 stay;
+  a Pi is added as supervisor (flow calculation, logging, web UI, fallback table). This
+  replaces the 2026-11-13 answer (PLC, HMI and VFD replaced).
+- [x] Sensor interface, VFD and HMI connection: sensors stay on the PLC, the ACS560 stays, the
+  HMI bridges the drive over Modbus (`hardware-overview.md` §10).
+- [ ] Behaviour on power cut or hung controller today; hardwired E-stop wiring and manual
+  bypass (`hardware-overview.md` §10.10).
+- [x] Cutover plan: log first (Pi read-only), then the Pi feeds the PLC, with drills at each
+  phase (`hardware-overview.md` §10.8).
 - [ ] Barometer available, or use a configured `P_atm` constant?

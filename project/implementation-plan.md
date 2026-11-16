@@ -3,6 +3,24 @@
 > **Status: under team review.** No source files (Phases A–H below) have been touched yet.
 > Implementation starts only after explicit go-ahead — see "Execution Mode" at the bottom.
 
+> **Update 2026-11-14 — read before using this plan.** The architecture in
+> `project/hardware-overview.md` §10 changes what the Pi does, so parts of this plan are
+> **superseded** and must be revised before implementation:
+>
+> - The PLC, not the Pi, runs the PID in normal operation. Phase C's `write()` of a commanded
+>   RPM and Phase D's PID branch are replaced by: the Pi **writes flow plus a heartbeat** to
+>   the PLC and **reads** counts, demanded RPM and drive status for logging.
+> - "The PLC relays the RPM to the ACS560" (fork 2) becomes: **the HMI bridges** the demanded
+>   RPM to the drive over RS-485 Modbus. The Pi never talks to the drive.
+> - Still valid: FINS for the Pi-to-PLC link (fork 1), the kiosk browser on the Flask
+>   dashboard (fork 3), the `PLC_SIM` simulate mode, the Phase A/B/E–G items.
+> - New work not in this plan: table generator for the fallback lookup table, heartbeat
+>   writer, failure-drill tests, and the PLC ladder changes (flow source selector, heartbeat
+>   watch, table interpolation, safe-RPM handling), which are PLC-program work.
+>
+> Regenerate the phase list from §10.8 and §10.9 of `hardware-overview.md` when the team
+> approves the architecture.
+
 ## Context
 
 The owner is moving from "code that runs end-to-end against stubs" to a real deployment:
@@ -74,10 +92,13 @@ the RPM output, same as `scl_p1`/`scl_p2`/`scl_t`):
 - `read_dm(addr, count)` / `write_dm(addr, data)`: if `PLC_SIM`, return/accept the current
   hardcoded stub values (`p1_raw=4500`, `p2_raw=4200`, `t_raw=3360`) so dev-machine behavior is
   unchanged. Else, perform the real FINS memory-area read/write via `self.fins_con`.
-  **Verify the exact `fins` package method name/signature at implementation time** (e.g.
-  `memory_area_read`/`memory_area_write`) by installing `fins==1.0.5` in a venv and inspecting
-  it — it isn't installed anywhere in this repo today, so I haven't confirmed the call shape
-  yet and won't guess at it in this plan.
+  **Checked 2026-11-16:** `fins==1.0.5` is installed in the project `.venv`. The calls are
+  `memory_area_read(memory_area_code, beginning_address, number_of_items)` and
+  `memory_area_write(memory_area_code, beginning_address, write_bytes, number_of_items)`, with
+  a 3-byte beginning address (2 bytes word, 1 byte bit). The library negotiates node addresses
+  in `connect()`, leaves the socket without a timeout afterwards (set one), and also exposes
+  `change_to_program_mode` and program-area writes, which this code must never call. See
+  `project/connection-diagram.md` §8.
 - `read_all()`: calls `read_dm` for each of `cfg.dm_addr_p1/p2/t`, keeps the existing
   `plc_ai_error` fault-detection logic and scaling/averaging logic unchanged.
 - `write()`: scales `self.data.motor_rpm` through the new RPM `Scaler` and calls
