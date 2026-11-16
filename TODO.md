@@ -18,6 +18,8 @@
 - [x] Apply the doc corrections from the 2026-11-16 review: `project/hardware-overview.md` (§6 body, §10.3, §10.5, §10.6 two 1-D tables, §10.10, §11.1-11.6, §12.2 no open-circuit detection on 0-10 V, §12.5), `.claude/CLAUDE.md` (run steps, target data flow, Known Technical Debt, requirements path, tests), `project/implementation-plan.md` (`fins` call shapes) (2026-11-16)
 
 ## Not Started
+- [ ] **Get team review** of `project/simulation-upgrade-plan.md` (plate moved to between fan and chimney, heat reuse removed, tapered square chimney 125 ft / 5 ft base / 3 ft top, atmosphere with height, temperature-coloured tube with density particles, more calculations) and answer its §8 open questions; then implement in one pass
+- [ ] Correct `project/process-description.md` §2: the orifice plate is between the fan and the chimney, not upstream of the fan (owner, 2026-11-16); done as part of the simulation upgrade
 - [ ] Close the site verification checklist in `project/connection-diagram.md` §9 (channel order, signal types, pressure sign, PLC Setup, drive parameter backup, STO jumpers, HMI model)
 - [ ] Sensor fault detection by count bands as well as the 8000 code (TxRail failure gives about 6190 or -75 counts, not 8000); consider moving T from 0-10 V to 4-20 mA for wire-break detection (`project/connection-diagram.md` §8 items 1-2)
 - [ ] Guard `calc_pv` inputs in `fan-ctrl/plc.py: read_all` (P1 = 0, ratio above 1 or negative, AD041 zero counts at power-up) without changing the formula

@@ -95,3 +95,18 @@
 - After the owner's go-ahead, applied the doc corrections: `project/hardware-overview.md` (§6 body rewritten as decided plus two open points; §10.3 pointer and Ethernet facts; §10.5 drive comms-loss row; §10.6 two 1-D `APR` tables proposed; §10.10; §11.1 design implications; §11.2-11.6; §12.2 corrected, 0-10 V has no open-circuit detection; §12.5 authority wording and HMI model note), `.claude/CLAUDE.md` (single root venv and `requirements.txt`, target data flow added above today's, Known Technical Debt refreshed, tests line), `project/implementation-plan.md` (`fins` call shapes confirmed).
 - Left as they were: `hardware-overview.md` §4, §5 and §9 (older text, still accurate as history) and the rest of `implementation-plan.md`, which is to be regenerated after team approval.
 - Full test suite: 285 passed. No source code changed. Nothing committed.
+
+## 2026-11-16 — Simulation upgrade plan written for review
+- Owner reviewed the simulation and asked for more visuals and calculations, with corrections:
+  the orifice plate is between the fan and the chimney; heat reuse inside the kiln is not of
+  interest; the chimney is 125 ft tall, 5 ft x 5 ft at the base and 3 ft x 3 ft at the top and
+  must stay parametric.
+- Read all of `sim/` and `tests/sim/`. Findings beyond the owner's points: the chimney is one
+  lump with a single mean temperature, and outside air has one pressure and density at all heights.
+- Owner decisions: particles represent air density / pressure; write the plan to `project/` first.
+- Files added: `project/simulation-upgrade-plan.md` (layout, physics, new calculations, visuals,
+  files to change, tests, open questions).
+- Files changed: `TODO.md` (review task; process-description correction task).
+- Noted in the plan: true-scale pressure differences are under 1 % of atmospheric and would not
+  show in a particle count, so the plan proposes a labelled "Exaggerate pressure" switch.
+- No code changes. Implementation waits for team review and an explicit go-ahead.
