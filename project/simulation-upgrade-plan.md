@@ -1,6 +1,8 @@
-# Simulation upgrade plan
+# Simulation upgrade plan (stage 1)
 
 **Status:** draft for team review, 2026-11-16. Nothing in this plan is implemented yet.
+**Stage 2** (the whole kiln: ring of fireboxes, dampers, fuel feeding, tiles) is in
+`project/whole-kiln-simulation-plan.md` and builds on this stage.
 **Scope:** the process simulation in `sim/` and its GUI only. No change to `fan-ctrl/`, `dashboard/`
 or any hardware. All parameter values remain placeholders, not measured site data, except the
 chimney dimensions given by the owner below.
@@ -248,7 +250,20 @@ the scene has been checked in a browser at default settings, fan stopped, and fa
 
 ---
 
-## 9. Order of work
+## 9. Site values found after this plan was written
+
+From the VelKilnMaster repository (read 2026-11-16; details in
+`project/whole-kiln-simulation-plan.md` §4). To be used when the defaults are retuned (§3.5):
+
+- P1 and P2 transmitters are 0-250 Pa.
+- One real operating point: P1 119.2 Pa, P2 87 Pa, exhaust 130.4 degC, fan 380 rpm. Both pressures
+  are positive, which agrees with the plate being after the fan.
+- The ID fan has a resonance band at 150-210 rpm.
+- Chimney height is given as 120 ft in one document and 125 ft in another.
+
+---
+
+## 10. Order of work
 
 One pass on the dev machine after approval:
 

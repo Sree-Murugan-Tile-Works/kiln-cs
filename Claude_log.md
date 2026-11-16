@@ -110,3 +110,22 @@
 - Noted in the plan: true-scale pressure differences are under 1 % of atmospheric and would not
   show in a particle count, so the plan proposes a labelled "Exaggerate pressure" switch.
 - No code changes. Implementation waits for team review and an explicit go-ahead.
+
+## 2026-11-17 — Whole-kiln simulation plan (stage 2) written for review
+- Owner pointed to `https://github.com/smtwkla/VelKilnMaster` as the source of kiln knowledge.
+  Cloned it to a scratch folder (not into this repo) and read `docs/Kiln-Domain.md`,
+  `docs/Kiln-Coldstart-Firing.md`, `docs/Module-DAQ.md`, the cold-start model's structure and
+  the LabVIEW flow-control screenshots. Not read: refractory PDFs, the firing schedule
+  workbook, most of the application code.
+- Found: the kiln is a 60-firebox Hoffman ring with about 30 dampers into a main flue; firing
+  schedule, damper cycle and firing plan rules; a real operating point (P1 119.2 Pa, P2 87 Pa,
+  130.4 degC, 380 rpm); legacy formula constants; an existing NumPy model of gas path, draught,
+  fuel and brick heating for 9 fireboxes.
+- Conflicts recorded, not resolved: ACS 550 vs ACS560; LabVIEW/NI 9219 vs Omron PLC as the
+  present controller; chimney 120 ft vs 125 ft; the legacy formula with the listed constants
+  gives about 1608 (gauge ratio) or about 65 (absolute), not the displayed 40.33.
+- Owner decision: keep the committed plan as stage 1 and add a stage 2 for the whole kiln.
+- Files added: `project/whole-kiln-simulation-plan.md`.
+- Files changed: `project/simulation-upgrade-plan.md` (titled stage 1, pointer to stage 2, new
+  §9 with site values found), `TODO.md` (three new tasks).
+- No code changes.
