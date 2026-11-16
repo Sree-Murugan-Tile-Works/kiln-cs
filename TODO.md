@@ -72,3 +72,5 @@
 - [ ] Review `project/simulation-report.md` with the owner/team; replace placeholder parameters with site values in the order the report ranks them (duct diameter, plate bore, gas molar mass, plate Cd, chimney height, gas temperature at the plate)
 - [ ] Check the transmitter range against the fan's top speed (placeholder P2 reaches 108 % of range at maximum rpm) and decide the minimum fan speed deliberately (sets the lowest holdable flow)
 - [ ] Confirm the PLC's PID (PIDAT) has anti-windup and bumpless start; the simulation shows ~19 minutes recovery without anti-windup after 10 minutes of saturation
+- [ ] Build the simulation in stages A-J per `project/simulation-build-plan.md` (one commit per stage; none built yet)
+- [ ] Correct the legacy formula figures in `project/whole-kiln-simulation-plan.md` §7 item 4 (see build plan §5)

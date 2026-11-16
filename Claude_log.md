@@ -129,3 +129,11 @@
 - Files changed: `project/simulation-upgrade-plan.md` (titled stage 1, pointer to stage 2, new
   §9 with site values found), `TODO.md` (three new tasks).
 - No code changes.
+
+## 2026-11-17 — Build plan for the staged simulation build
+- Owner asked for a multi-stage build plan, with a commit after each stage.
+- Added `project/simulation-build-plan.md`: stages A-J, design decisions for stages A and B, the
+  operating-point mismatch (about 200 Pa lost between P2 and the chimney top), and a correction to
+  the legacy formula figures (31.0 or 50.9 against 40.33 on screen, not 1608 or 65).
+- Read all of `sim/`, `tests/sim/` and the legacy formula defaults in preparation.
+- Not done: no stage is built. Work stopped at a usage limit before stage A started.
