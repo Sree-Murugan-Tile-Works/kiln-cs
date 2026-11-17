@@ -15,6 +15,9 @@ def test_index_and_static_files_are_served(client):
     assert b"Kiln process simulation" in c.get("/").data
     assert c.get("/static/app.js").status_code == 200
     assert c.get("/static/style.css").status_code == 200
+    assert c.get("/static/scene.js").status_code == 200
+    page = c.get("/").data
+    assert b'id="scene"' in page and b'id="strip"' in page and b'id="exaggerate"' in page
     assert c.get("/static/../server.py").status_code in (301, 308, 404)
 
 

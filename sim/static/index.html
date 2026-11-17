@@ -61,58 +61,31 @@
       <div class="kpi"><span>Natural draft alone</span><b id="k-nat">–</b><i>m³/s</i></div>
       <div class="kpi"><span>Fan speed</span><b id="k-rpm">–</b><i>rpm</i></div>
       <div class="kpi"><span>PID output</span><b id="k-pid">–</b><i>%</i></div>
+      <div class="kpi"><span>Legacy formula value</span><b id="k-legacy">–</b><i>old system units</i></div>
     </section>
 
-    <section class="panel schematic" aria-label="Process schematic">
-      <svg id="svg" viewBox="0 0 900 250" role="img" aria-label="Kiln, fan, orifice plate and chimney (drawing is replaced in build stage D)">
-        <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-            <path d="M0,0 L10,5 L0,10 z" class="arrow-head"/>
-          </marker>
-        </defs>
-        <!-- NOTE: this drawing still shows the plate before the fan; build stage D replaces it -->
-        <rect x="14" y="100" width="290" height="116" rx="8" class="box"/>
-        <path d="M130 100 V216" class="tap"/>
-        <text x="72" y="126" class="label" text-anchor="middle">Kiln</text>
-        <text x="72" y="152" class="num" text-anchor="middle"><tspan id="s-tgas">–</tspan> °C</text>
-        <text x="72" y="172" class="sub" text-anchor="middle">exhaust gas</text>
-        <text x="72" y="198" class="sub" text-anchor="middle">kiln <tspan id="s-kiln">0</tspan> Pa</text>
-        <rect x="142" y="112" width="150" height="92" rx="6" class="box dashed"/>
-        <text x="217" y="136" class="label" text-anchor="middle">Flue to the fan</text>
-        <text x="217" y="160" class="num" text-anchor="middle"><tspan id="s-tfan">–</tspan> °C</text>
-        <text x="217" y="180" class="sub" text-anchor="middle">same gas</text>
-        <text x="217" y="196" class="sub" text-anchor="middle">(what the fan sees)</text>
-        <!-- duct -->
-        <path d="M304 160 H740" class="duct"/>
-        <path id="flowline" d="M304 160 H740" class="flowline" marker-end="url(#arrow)"/>
-        <!-- orifice plate -->
-        <rect x="416" y="140" width="8" height="12" class="plate"/>
-        <rect x="416" y="168" width="8" height="12" class="plate"/>
-        <text x="420" y="122" class="label" text-anchor="middle">Orifice plate</text>
-        <text x="388" y="100" class="sub" text-anchor="end">P1 <tspan id="s-p1" class="numi">–</tspan> Pa</text>
-        <text x="452" y="100" class="sub" text-anchor="start">P2 <tspan id="s-p2" class="numi">–</tspan> Pa</text>
-        <path d="M400 104 V138 M440 104 V138" class="tap"/>
-        <text x="420" y="204" class="sub" text-anchor="middle">ΔP <tspan id="s-dp" class="numi">–</tspan> Pa</text>
-        <text x="420" y="222" class="sub" text-anchor="middle">Q <tspan id="s-q" class="numi">–</tspan> m³/s</text>
-        <!-- fan -->
-        <g transform="translate(650 160)">
-          <circle r="36" class="box"/>
-          <g id="fan-blades" class="blades">
-            <path d="M0 0 L0 -30 M0 0 L26 15 M0 0 L-26 15" class="blade"/>
-          </g>
-          <circle r="4" class="hub"/>
-        </g>
-        <text x="650" y="216" class="num" text-anchor="middle"><tspan id="s-rpm">–</tspan> rpm</text>
-        <text x="650" y="234" class="sub" text-anchor="middle">fan adds <tspan id="s-fandp" class="numi">–</tspan> Pa</text>
-        <!-- chimney -->
-        <path d="M740 178 V50 H880 V178 Z" class="box chimney"/>
-        <text x="810" y="74" class="label" text-anchor="middle">Chimney</text>
-        <text x="810" y="98" class="num" text-anchor="middle">draft <tspan id="s-draft">–</tspan> Pa</text>
-        <text x="810" y="118" class="sub" text-anchor="middle">gas mean <tspan id="s-tchim">–</tspan> °C</text>
-        <text x="810" y="136" class="sub" text-anchor="middle">gas at top <tspan id="s-ttop">–</tspan> °C</text>
-        <text x="810" y="160" class="sub" text-anchor="middle">outside air <tspan id="s-tamb">–</tspan> °C</text>
-        <path d="M810 46 q-8 -9 0 -17 q8 -8 0 -17" class="smoke"/>
-      </svg>
+    <section class="panel scene" aria-label="Process picture">
+      <div class="panel-head">
+        <h2>Exhaust path: kiln → fan → orifice plate → chimney → sky</h2>
+        <label class="inline switch" title="Pressure differences here are far below 1 % of atmospheric, so at true scale they cannot be seen">
+          <input type="checkbox" id="exaggerate" checked> Exaggerate pressure
+        </label>
+      </div>
+      <canvas id="scene" role="img" aria-label="Kiln, fan, orifice plate and tapered chimney against the sky. Tube colour shows gas temperature; particles show gas density."></canvas>
+      <p class="note" id="scene-note"></p>
+      <h3 class="strip-title">Gauge pressure along the path (Pa)</h3>
+      <canvas id="strip" role="img" aria-label="Gauge pressure from the kiln to the chimney top"></canvas>
+    </section>
+
+    <section class="panel calcs" aria-label="Calculations">
+      <div class="panel-head"><h2>Calculations at this instant</h2></div>
+      <div class="budget">
+        <div class="budget-row"><span>Pushing</span><div class="bar" id="bar-sources"></div><b id="sum-sources">–</b></div>
+        <div class="budget-row"><span>Resisting</span><div class="bar" id="bar-losses"></div><b id="sum-losses">–</b></div>
+        <div class="legend" id="budget-legend"></div>
+      </div>
+      <div class="calc-grid" id="calc-grid"></div>
+      <p class="note" id="calc-note"></p>
     </section>
 
     <section class="panel faults" aria-label="Sensor faults">
@@ -136,6 +109,7 @@
   </main>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
+<script src="/static/scene.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -4,7 +4,8 @@
 
 const POLL_MS = 300;
 const MAX_KEPT_RECORDS = 3600;
-const OPEN_GROUPS = new Set(["Weather", "Kiln gas", "Chimney", "Fan"]);
+const OPEN_GROUPS = new Set(["Weather", "Kiln gas", "Chimney"]);
+const FT_PER_M = 3.28084;
 const FAULT_LABELS = { none: "Normal", open: "Open circuit (8000)", stuck: "Stuck signal" };
 const CHANNEL_INFO = { p1: ["P1 transmitter", "Pa"], p2: ["P2 transmitter", "Pa"], t: ["Temperature transmitter", "°C"] };
 
@@ -100,7 +101,9 @@ function showSliderValue(name, value) {
     input.checked = value >= 0.5;
     valueEl.textContent = value >= 0.5 ? "on" : "off";
   } else {
-    valueEl.innerHTML = `${fmt(value, decimalsFor(spec.step))} <small>${spec.unit === "-" ? "" : spec.unit}</small>`;
+    // Chimney sizes were given in feet, so show feet next to the metres.
+    const feet = spec.group === "Chimney" && spec.unit === "m" ? ` (${fmt(value * FT_PER_M, 1)} ft)` : "";
+    valueEl.innerHTML = `${fmt(value, decimalsFor(spec.step))} <small>${spec.unit === "-" ? "" : spec.unit}${feet}</small>`;
   }
   wrapper.classList.toggle("changed", Math.abs(value - state.defaults[name]) > 1e-9);
 }
@@ -169,6 +172,7 @@ function buildControls(faults) {
   $("btn-defaults").addEventListener("click", () => api("/api/params", { reset: true }).catch((e) => toast(e.message)));
   $("speed").addEventListener("change", () => api("/api/control", { speed: Number($("speed").value) }).catch((e) => toast(e.message)));
   $("window").addEventListener("change", () => { state.windowS = Number($("window").value); drawAll(); });
+  $("exaggerate").addEventListener("change", () => { Scene.setExaggerate($("exaggerate").checked); showSceneNote(); });
 
   const host = $("fault-rows");
   for (const channel of Object.keys(CHANNEL_INFO)) {
@@ -225,7 +229,9 @@ function statusChip(record) {
     PID: ["PID control", "ok"], MANUAL: ["Manual speed", "ok"],
     OFF_SAFE_RPM: ["OFF → safe speed", "warn"], SENSOR_FAULT_SAFE_RPM: ["Sensor fault → safe speed", "bad"],
   };
-  const [text, level] = map[record.status] || [record.status, "warn"];
+  let [text, level] = map[record.status] || [record.status, "warn"];
+  if (record.pressure_out_of_range) { text += " · P1/P2 outside transmitter range"; level = "warn"; }
+  if (record.in_resonance_band) { text += " · fan in resonance band"; level = "warn"; }
   chip.textContent = record.stalled ? `${text} · no flow (stalled)` : text;
   chip.className = "chip " + (record.stalled ? "bad" : level);
 }
@@ -238,23 +244,99 @@ function updateReadouts(record) {
   $("k-nat").textContent = fmt(record.flow_natural_only_m3s, 2);
   $("k-rpm").textContent = fmt(record.rpm_actual, 0);
   $("k-pid").textContent = record.pid_output === null ? "–" : fmt(Math.max(0, Math.min(1, record.pid_output)) * 100, 0);
+  $("k-legacy").textContent = fmt(record.flow_legacy, 1);
+}
 
-  const text = {
-    "s-tgas": fmt(record.t_gas_c, 0), "s-p1": fmt(record.p1_pa, 1), "s-p2": fmt(record.p2_pa, 1),
-    "s-dp": fmt(record.plate_dp_pa, 1), "s-q": fmt(record.flow_true_m3s, 2), "s-rpm": fmt(record.rpm_actual, 0),
-    "s-fandp": fmt(record.fan_dp_pa, 0), "s-draft": fmt(record.draft_pa, 0), "s-tchim": fmt(record.t_chimney_mean_c, 0),
-    "s-ttop": fmt(record.t_chimney_top_c, 0), "s-tamb": fmt(record.t_ambient_c, 1), "s-tfan": fmt(record.t_gas_c, 0),
-    "s-kiln": fmt(state.serverValues.kiln_gauge_pa, 0),
-  };
-  for (const [id, value] of Object.entries(text)) $(id).textContent = value;
+// ------------------------------------------------------------------ picture note and calculations
+function showSceneNote() {
+  const factor = state.profile ? state.profile.pressure_exaggeration : 100;
+  const widths = `Heights are to scale; tube widths are drawn ${Scene.widthExaggeration}× wider; horizontal distances are schematic.`;
+  $("scene-note").textContent = $("exaggerate").checked
+    ? `NOT TO SCALE: pressure differences are drawn ${factor}× larger so they can be seen. Each dot stands for gas molecules per unit volume (pressure ÷ temperature). The numbers are true values. ${widths}`
+    : `True scale: each dot stands for gas molecules per unit volume (pressure ÷ temperature). Only the temperature effect is visible, because pressures here differ from atmospheric by less than 1 %. ${widths}`;
+}
 
-  // Animation speed follows the real quantities: the fan spins with rpm, the dashes move with flow.
-  const spinSeconds = record.rpm_actual > 5 ? Math.max(0.15, 60 / record.rpm_actual) : 0;
-  $("fan-blades").style.animationDuration = spinSeconds ? `${spinSeconds}s` : "0s";
-  $("fan-blades").style.animationPlayState = spinSeconds ? "running" : "paused";
-  const flowSeconds = record.flow_true_m3s > 0.05 ? Math.max(0.15, 26 / (record.flow_true_m3s * 20)) : 0;
-  $("flowline").style.animationDuration = flowSeconds ? `${flowSeconds}s` : "0s";
-  $("flowline").style.animationPlayState = flowSeconds ? "running" : "paused";
+const BUDGET_PARTS = {
+  sources: [["kiln_gauge_pa", "Kiln pressure", "--c-teal"], ["draft_pa", "Natural draft", "--c-green"], ["fan_pa", "Fan", "--c-orange"]],
+  losses: [["kiln_pa", "Kiln and flue", "--c-red"], ["fan_to_plate_pa", "Fan-to-plate duct", "--c-grey"],
+    ["plate_pa", "Plate (permanent)", "--c-magenta"], ["restriction_pa", "Restriction", "--c-blue"],
+    ["chimney_friction_pa", "Chimney friction", "--c-teal"], ["exit_pa", "Chimney exit", "--c-green"]],
+};
+
+function drawBudget(budget) {
+  const totals = {};
+  for (const side of ["sources", "losses"]) {
+    totals[side] = BUDGET_PARTS[side].reduce((sum, [key]) => sum + Math.max(0, budget[side][key]), 0);
+  }
+  const scale = Math.max(totals.sources, totals.losses, 1e-9);
+  const legend = $("budget-legend");
+  legend.innerHTML = "";
+  for (const side of ["sources", "losses"]) {
+    const bar = $(`bar-${side}`);
+    bar.innerHTML = "";
+    for (const [key, name, color] of BUDGET_PARTS[side]) {
+      const value = budget[side][key];
+      if (value > 0.05) {
+        const part = document.createElement("i");
+        part.style.width = `${(value / scale) * 100}%`;
+        part.style.background = `var(${color})`;
+        part.title = `${name}: ${fmt(value, 1)} Pa`;
+        bar.appendChild(part);
+      }
+      const item = document.createElement("span");
+      const swatch = document.createElement("i");
+      swatch.style.borderTopColor = `var(${color})`;
+      const number = document.createElement("b");
+      number.textContent = fmt(value, 1);
+      item.append(swatch, document.createTextNode(`${name} `), number);
+      legend.appendChild(item);
+    }
+    $(`sum-${side}`).textContent = `${fmt(totals[side], 0)} Pa`;
+  }
+}
+
+function calcCard(title, rows) {
+  const card = document.createElement("div");
+  card.className = "calc-card";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const list = document.createElement("dl");
+  for (const [name, value] of rows) {
+    const dt = document.createElement("dt"); dt.textContent = name;
+    const dd = document.createElement("dd"); dd.textContent = value;
+    list.append(dt, dd);
+  }
+  card.append(heading, list);
+  return card;
+}
+
+function updateCalcs(profile) {
+  const c = profile.calcs, by = Object.fromEntries(profile.stations.map((s) => [s.key, s]));
+  const thousands = (v) => Math.round(v).toLocaleString("en-US");
+  drawBudget(c.budget);
+  const grid = $("calc-grid");
+  grid.innerHTML = "";
+  grid.append(
+    calcCard("Flow", [["Mass flow", `${fmt(c.mass_flow_kg_s, 2)} kg/s`], ["", `${fmt(c.mass_flow_t_h, 1)} t/h`],
+      ["At the plate", `${fmt(c.q_plate_m3_s, 2)} m³/s`],
+      ["Push from draft", c.draft_share === null ? "–" : `${fmt(c.draft_share * 100, 0)} %`]]),
+    calcCard("Velocity", [["Kiln opening", `${fmt(c.velocity.kiln_opening_m_s, 1)} m/s`], ["Duct", `${fmt(c.velocity.duct_m_s, 1)} m/s`],
+      ["Plate bore", `${fmt(c.velocity.plate_bore_m_s, 1)} m/s`], ["Chimney base", `${fmt(c.velocity.chimney_base_m_s, 1)} m/s`],
+      ["Chimney exit", `${fmt(c.velocity.chimney_exit_m_s, 1)} m/s`]]),
+    calcCard("Pressure (absolute)", [["P1", `${thousands(by.p1.p_abs_pa)} Pa`], ["P2", `${thousands(by.p2.p_abs_pa)} Pa`],
+      ["Air at ground", `${thousands(profile.ground.p_abs_pa)} Pa`], ["Air at chimney top", `${thousands(profile.top.outside.p_abs_pa)} Pa`]]),
+    calcCard("Density", [["Gas at the plate", `${fmt(by.p1.rho, 3)} kg/m³`], ["Gas at chimney top", `${fmt(profile.top.rho, 3)} kg/m³`],
+      ["Air at ground", `${fmt(profile.ground.rho, 3)} kg/m³`], ["Air at chimney top", `${fmt(profile.top.outside.rho, 3)} kg/m³`]]),
+    calcCard("Fan power", [["Air power", `${fmt(c.fan_air_power_w / 1000, 2)} kW`], ["Shaft (estimate)", `${fmt(c.fan_shaft_power_w / 1000, 2)} kW`]]),
+    calcCard("Heat", [["Carried above ambient", `${fmt(c.heat_carried_w / 1000, 0)} kW`], ["Lost through chimney wall", `${fmt(c.heat_lost_chimney_w / 1000, 0)} kW`],
+      ["Gas at chimney top", `${fmt(profile.top.t_c, 0)} °C`],
+      ["Time in chimney", c.residence_time_chimney_s === null ? "–" : `${fmt(c.residence_time_chimney_s, 0)} s`]]),
+    calcCard("Reynolds number", [["Duct", thousands(c.reynolds.duct)], ["Chimney base", thousands(c.reynolds.chimney_base)],
+      ["Chimney top", thousands(c.reynolds.chimney_top)]]),
+  );
+  const imbalance = c.budget.imbalance_pa;
+  $("calc-note").textContent = `${c.viscosity_note} Pushing minus resisting is ${fmt(imbalance, 1)} Pa: it is zero when the flow is steady and non-zero while the gas is speeding up or slowing down.`;
+
 }
 
 // ------------------------------------------------------------------ charts
@@ -264,14 +346,18 @@ const CHARTS = [
     { key: "flow_true_m3s", label: "True flow", color: "--c-blue" },
     { key: "flow_estimate_m3s", label: "Controller's estimate", color: "--c-orange" },
     { key: "flow_natural_only_m3s", label: "Natural draft alone", color: "--c-green", dash: true } ] },
-  { id: "rpm", title: "Fan speed", unit: "rpm", series: [
+  { id: "rpm", title: "Fan speed (shaded: resonance band)", unit: "rpm", band: ["resonance_low_rpm", "resonance_high_rpm"], series: [
     { key: "rpm_commanded", label: "Commanded", color: "--c-orange", dash: true },
     { key: "rpm_actual", label: "Actual shaft", color: "--c-blue" } ] },
   { id: "press", title: "Pressures (gauge, room = 0)", unit: "Pa", series: [
-    { key: "p1_pa", label: "P1 upstream", color: "--c-blue" },
-    { key: "p2_pa", label: "P2 downstream", color: "--c-magenta" },
+    { key: "p1_pa", label: "P1 before plate", color: "--c-blue" },
+    { key: "p2_pa", label: "P2 after plate", color: "--c-magenta" },
+    { key: "p_fan_in_pa", label: "Fan inlet", color: "--c-red" },
+    { key: "p_chimney_base_pa", label: "Chimney base", color: "--c-teal", dash: true },
     { key: "draft_pa", label: "Natural draft", color: "--c-green" },
     { key: "fan_dp_pa", label: "Fan adds", color: "--c-orange" } ] },
+  { id: "legacy", title: "Legacy formula value (not m³/s; shown for comparison, not used for control)", unit: "old units", series: [
+    { key: "flow_legacy", label: "calc_pv", color: "--c-magenta" } ] },
   { id: "temp", title: "Temperatures", unit: "°C", series: [
     { key: "t_gas_c", label: "Exhaust gas at the plate", color: "--c-magenta" },
     { key: "t_chimney_mean_c", label: "Chimney gas (mean)", color: "--c-orange" },
@@ -381,6 +467,13 @@ function drawChart(chart) {
     ctx.fillStyle = css("--muted"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
     ctx.fillText(tick.toFixed(digits), PAD.left - 6, y(tick));
   }
+  if (chart.band) {                // shaded band, e.g. the fan's resonance speeds
+    const [bandLo, bandHi] = chart.band.map((name) => state.serverValues[name]);
+    if (bandHi > bandLo && bandHi > lo && bandLo < hi) {
+      ctx.fillStyle = css("--strip-suction");
+      ctx.fillRect(PAD.left, y(Math.min(hi, bandHi)), width - PAD.left - PAD.right, y(Math.max(lo, bandLo)) - y(Math.min(hi, bandHi)));
+    }
+  }
   if (lo < 0 && hi > 0) {          // zero line for the pressure chart
     ctx.strokeStyle = css("--muted"); ctx.setLineDash([2, 3]);
     ctx.beginPath(); ctx.moveTo(PAD.left, y(0)); ctx.lineTo(width - PAD.right, y(0)); ctx.stroke(); ctx.setLineDash([]);
@@ -426,6 +519,12 @@ async function poll() {
     syncSliders(snapshot.values);
     syncControls(snapshot);
     if (state.records.length) updateReadouts(state.records[state.records.length - 1]);
+    if (snapshot.profile) {
+      state.profile = snapshot.profile;
+      Scene.update(snapshot.profile, state.records[state.records.length - 1] || null, snapshot.values, snapshot.running);
+      updateCalcs(snapshot.profile);
+      showSceneNote();
+    }
     drawAll();
   } catch (error) {
     $("chip-status").textContent = "server not reachable";
@@ -440,6 +539,8 @@ async function init() {
   buildSliders();
   buildControls(specs.faults);
   buildCharts();
+  Scene.init($("scene"), $("strip"));
+  Scene.setExaggerate($("exaggerate").checked);
   const first = await api("/api/state");
   syncSliders(first.values);
   window.addEventListener("resize", drawAll);

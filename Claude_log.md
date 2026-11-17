@@ -176,3 +176,14 @@
 - At the default point: 11.2 t/h of gas, 3.0 m/s in the duct, 4.2 m/s at the chimney exit, about
   1.1 kW of fan air power, 344 kW carried above ambient, 51 kW lost through the chimney wall.
 - 352 tests pass.
+
+## 2026-11-17 — Build stage D: the new picture
+- New `sim/static/scene.js`: canvas scene with the tube coloured by gas temperature, particles for
+  gas density (pressure / temperature) inside the tube and in a blue sky, a turning fan, the plate,
+  the restriction and the tapered chimney drawn to height scale; labels at every station and for
+  the outside air at ground and at the chimney top.
+- "Exaggerate pressure" switch (on by default, x100, with a NOT TO SCALE note); pressure strip along
+  the path; calculations panel with a pushing/resisting pressure bar; legacy value shown as a KPI
+  and a chart; resonance band shaded on the speed chart; chimney sliders show feet.
+- Checked with headless Edge screenshots at the default point, at 100 rpm and at 450 rpm. Not
+  checked by eye: the true-scale view (switch off), the light theme, and a narrow phone-width window.
