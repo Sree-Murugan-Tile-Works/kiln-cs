@@ -218,3 +218,14 @@
 - Gas temperatures are a nominal profile by zone until stage H supplies real ones.
 - Ignored: buoyancy inside the kiln, pressure loss along the main flue; handling units are treated as empty.
 - 411 tests pass.
+
+## 2026-11-17 — Build stage H: fuel, combustion, gas, tile and brick heat (stage 2.3-2.4)
+- New `sim/kiln/fuel.py` (firing plan recipe scaled to 724 kg per 160 charges, conditional skip/add charges, moisture adjustment of charge weight and heating value, exponential burn-out), `sim/kiln/thermal.py` (gas followed unit by unit in its flow direction: mix, effectiveness exchange with tiles and brick, backward-Euler solids, drying held at 100 degC, outlets split in the network's proportions) and `sim/kiln/kilnsim.py` (`KilnSim`: schedule, charges, network, stage 1 fan at a fixed rpm, heat, tile replacement, energy account, records and per-unit snapshot).
+- `sim/kiln/params.py`: new tile, brick, heat-transfer, fuel and operation parameters, each with its source or marked placeholder.
+- Energy is booked as enthalpy above the starting ambient; fuel in = stored + exhaust + wall + latent + heat taken out with fired tiles, to about 1e-14 relative. Mass: gas to the main flue = air in + vapour + fuel burnt, every step.
+- Tile replacement rule: fired tiles are swapped for green tiles (ambient, 600 kg water) 2 room units into the handling zone; the brick keeps its heat.
+- Tuned placeholders (not measurements): brick 25 t per unit (Coldstart gives about 25 t; 9 t made the cooling air strip the ware and put the peak at the fire front), gas-to-tile and gas-to-brick h*A 1500 W/K each, wall loss 22 W/K per unit. Other placeholders: tile cp 900, brick cp 1000, burn time constant 240 s, porthole 0.02 m2 open 60 s, recipe shape, skip above 1000 degC, thermocouple lag 600 s.
+- Result from the nominal start, 300 s step: settles within about 2 days to a travelling wave with point peak about 910 degC, exhaust 112-142 degC (12 h means), 3.3 kg/s to the fan, P1 about 125 Pa and P2 about 91 Pa (gauge) at 380 rpm, heat release 1078 kW, wall loss about 485 kW, latent about 135 kW. Heating about 16 degC/h, cooling about 13 degC/h. The hottest unit moves 9 units per day. All water is gone before a unit fires.
+- One simulated week at 300 s: 8.8 s on this laptop (2016 steps). 60 s and 300 s agree within about 5 degC after 12 h; at first they did not (34 degC) because portholes were ignored at long steps; they now use their time-averaged area.
+- 43 new tests in `tests/sim/test_kiln_thermal.py` (about 9 s). 454 tests pass.
+- Not verified / simplified: no site temperature logs compared yet; tiles dry only at 100 degC; no radiation or conduction between units; enough air for combustion is assumed, not checked; the fan point uses network air flows and the previous step's exhaust temperature (fuel and vapour mass, a few per cent, are not passed to the fan); firewood only (no coal stages); the handling-zone brick cools only through the wall.

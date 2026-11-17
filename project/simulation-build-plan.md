@@ -1,8 +1,8 @@
 # Simulation build plan (stages and commits)
 
 **Status:** written 2026-11-17. Owner asked for a multi-stage build with a commit after each stage.
-**Stages A to E (stage 1) are built and committed. Stages F to J (stage 2, the whole kiln) are not
-started.** This file fixes the order of work and the design decisions so the build can resume at
+**Stages A to E (stage 1) and F to H (stage 2) are built and committed; I and J are not done
+(see the status table).** This file fixes the order of work and the design decisions so the build can resume at
 any stage.
 **Scope:** `sim/`, `tests/sim/` and documents only. Dev machine only. No change to `fan-ctrl/`,
 `dashboard/` or hardware. The legacy `calc_pv` formula is called, never changed.
@@ -50,7 +50,9 @@ Status on 2026-11-17:
 | E | done | `project/simulation-report.md` regenerated |
 | F | done | `sim/kiln/layout.py`, `sim/kiln/schedule.py` |
 | G | done | `sim/kiln/network.py`; the kiln is 0.18 m2 to the fan |
-| H to J | not started | |
+| H | done | `sim/kiln/fuel.py`, `thermal.py`, `kilnsim.py`. Settles at peak about 910 degC, exhaust about 135 degC, P1 125 Pa, P2 91 Pa at 380 rpm; energy balance closes to about 1e-14. Heat-transfer and brick values are tuned placeholders |
+| I | not started | |
+| J | not started | Needs the site data in `project/whole-kiln-simulation-plan.md` §5 |
 
 ---
 
