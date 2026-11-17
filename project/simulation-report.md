@@ -1,391 +1,392 @@
 # How the parameters affect each other — kiln process simulation report
 
-Generated 2026-11-14 by `python -m sim.report` from the simulation in `sim/` (model of natural draft,
-chimney, orifice plate and fan, with the real `fan-ctrl` PID in a closed loop). Rerun it after changing the model or
-the defaults and the numbers below update.
+Generated 2026-11-17 by `python -m sim.report` from the simulation in `sim/` (natural draft, fan,
+orifice plate and tapered chimney, with the real `fan-ctrl` PID in a closed loop). Rerun it after changing the model
+or the defaults and the numbers below update.
 
-> **Read this first.** Every parameter value is a **placeholder** ("generally meaningful"), not site data. Trust the
-> **directions, the relative sizes and the interactions**; do not quote the absolute numbers (flows, pressures, rpm) as
-> predictions for the real kiln. §8 lists what the model leaves out.
+> **Read this first.** Parameter values are **placeholders**, except the chimney dimensions given by the owner
+> (125 ft tall, 5 ft square at the base, 3 ft square at the top) and the values tuned to one site reading (§3).
+> Trust the **directions, the relative sizes and the interactions**. Do not quote flows, pressures or rpm as
+> predictions for the real kiln. §9 lists what the model leaves out.
 
 ## 1. The system being modelled
 
-The heat reuse happens **inside the kiln's own tunnels, before the plate** (owner correction, 2026-11-14), so the plate
-and the fan see gas that has already been cooled:
+The orifice plate sits **between the fan and the chimney** (owner, 2026-11-16). Heat reuse inside the kiln is not
+modelled.
 
 ```
- kiln firing zone ─► heat-reuse tunnels ─► duct ─► ORIFICE PLATE ─► fan ─► chimney ─► outside air
- (T_kiln)            (gas cooled, loss       (loss)   P1 | P2, T        (adds     (buoyancy =
-                      shows up in P1)                                    pressure)  natural draft)
+ kiln and flues ──► FAN ──► short duct ──► ORIFICE PLATE ──► restriction ──► chimney ──► outside air
+ (resistance, as              (adds          P1 | P2, T        (loss seen     (buoyancy =      (pressure falls
+  a free area)                 pressure)                        on site)       natural draft)    with height)
 ```
 
-Default operating point (all sliders at their defaults): kiln gas 250 °C leaving the firing zone, 25 °C outside,
-20 % of the heat taken out by the tunnels so the plate sees 205 °C.
-**Natural draft alone moves 3.21 m³/s** (129 Pa of draft). The fan, between its minimum
-(200 rpm) and maximum (1500 rpm) speed, lets the loop hold anything from
-**3.29 to 6.28 m³/s**. The default setpoint of 4.5 m³/s needs about **875 rpm**.
+Default operating point: exhaust gas 130 °C, 30 °C outside.
+**Natural draft alone moves 1.61 m³/s** (98 Pa of draft). Between its minimum
+(220 rpm) and maximum (450 rpm) speed the fan lets the loop hold
+**2.51 to 4.21 m³/s**. The default setpoint of 3.6 m³/s needs about **372 rpm**.
 
 ## 2. How the pieces connect
 
-```
- outside T ─────────────────────────────┐
- kiln T ─► reuse extraction ─► T at plate ─► chimney mean T ─► DRAFT ──────┐
- chimney height / diameter / wall loss ──┘        ▲                       │
-                                                  │ (more flow = less      ▼
- gas molar mass ─► gas density ─────────────► cooling in chimney)   TOTAL PUSH = draft + fan gain ──► FLOW
-                                                                          ▲                          │
- fan rpm ─► fan gain (∝ rpm², fan curve) ────────────────────────────────┘                          ▼
-                                                                                           plate ΔP ∝ flow²
- resistances: reuse tunnels, duct, plate (permanent loss), chimney, idle fan ─► divide the push           │
-                                                                                         P1, P2 ─► counts ─► controller's flow estimate
- plate Cd / assumed Cd, assumed gas molar mass ───────────────────────────────────────────────────────────► (can be wrong) ─► PID ─► rpm
-```
+The model finds the flow from one pressure balance: **flow = √(total push ÷ total resistance)**.
 
-The model finds the flow from one pressure balance: **flow = √(total push ÷ total resistance)**. Four consequences
-explain almost everything below:
+* Push: kiln gauge pressure + natural draft + fan.
+* Resistance: kiln and flues, fan-to-plate duct, plate (permanent loss), restriction, chimney friction, chimney exit.
 
-1. **The fan and the draft add as pressures, but flow goes as a square root.** The more draft there already is, the less
-   extra flow the same fan speed buys (§5.1).
-2. **Resistance goes as 1/diameter⁴**, so the duct diameter and the plate bore dominate (§4).
-3. **The plate signal is ΔP ∝ flow²**, so the instrument sees less at low flow and the resolution gets coarse (§5.5).
-4. **The controller never sees the true flow**, only an estimate built from P1, P2, T and *assumed* Cd and gas molar mass.
-   Whatever those assumptions get wrong becomes a true-flow error (§5.6).
+Consequences that explain most of what follows:
 
-| Parameter group | Changes the draft | Changes the resistance | Changes the fan's push | Changes what the controller sees | Changes timing |
-|---|---|---|---|---|---|
-| Weather (outside T, pressure) | ✔ (density difference) | – | – | – | – |
-| Kiln gas T, reuse extraction | ✔ (gas lightness) | – | – | ✔ (T at the plate) | slow thermal lag |
-| Gas molar mass, specific heat | ✔ | – | ✔ (density) | ✔ (density in the flow equation) | – |
-| Reuse tunnel loss, duct, plate β | – | ✔ | – | ✔ (P1/P2 levels, ΔP signal) | – |
-| Chimney height/diameter/friction/wall loss | ✔ | ✔ | – | – | – |
-| Fan curve (shut-off ΔP, free-delivery flow, rated rpm) | – | ✔ (idle fan) | ✔ | – | – |
-| Transmitter range, noise, lag, drift | – | – | – | ✔ | ✔ |
-| PID gains, scan, ranges, anti-windup | – | – | ✔ (what rpm is asked for) | – | ✔ |
+1. **The fan and the draft add as pressures, but flow goes as a square root.** The more draft there already is, the
+   less extra flow the same fan speed buys (§6.1).
+2. **The plate is on the fan's discharge side.** P1 and P2 are negative when draft dominates and positive when the
+   fan pushes. The site transmitters read 0–250 Pa only, so they are blind at low fan speed (§4).
+3. **The plate signal is ΔP ∝ flow²**, so the resolution gets coarse at low flow (§6.5).
+4. **The controller never sees the true flow**, only a value built from P1, P2 and T (§5, §6.6).
 
-## 3. Baseline: what the fan does across its range
+## 3. Check against the one real operating point
 
-| fan rpm | flow m³/s | draft Pa | fan adds Pa | plate ΔP Pa | P1 Pa | P2 Pa | P2 vs ±range |
-|---|---|---|---|---|---|---|---|
-| 0 | 3.21 | 129 | -26 | 109 | -31 | -141 | 28 % |
-| 200 | 3.29 | 129 | -21 | 115 | -33 | -148 | 30 % |
-| 400 | 3.52 | 130 | -5 | 132 | -37 | -169 | 34 % |
-| 600 | 3.87 | 130 | 20 | 159 | -45 | -205 | 41 % |
-| 800 | 4.31 | 131 | 56 | 198 | -56 | -254 | 51 % |
-| 1000 | 4.82 | 131 | 103 | 247 | -70 | -318 | 64 % |
-| 1200 | 5.38 | 131 | 159 | 308 | -88 | -395 | 79 % |
-| 1500 | 6.28 | 132 | 264 | 419 | -119 | -538 | 108 % |
+LabVIEW screen, 17-03-2026: P1 119.2 Pa, P2 87.0 Pa, exhaust 130.4 °C, fan 380 rpm.
+
+|  | site | model at the same speed and temperature |
+|---|---|---|
+| P1 (Pa) | 119.2 | 120.9 |
+| P2 (Pa) | 87.0 | 88.3 |
+| Plate ΔP (Pa) | 32.2 | 32.6 |
+| True flow (m³/s) | not known | 3.66 |
+
+The match was obtained by choosing four placeholder values, so it is a **fit, not a confirmation**: duct and plate
+size (to give the measured ΔP at a believable flow), fan curve (about 300 Pa at 380 rpm, as the
+VelKilnMaster cold-start model assumes), kiln free area, and one more that needs explaining.
+
+**The restriction.** A 38.1 m chimney at 130.4 °C gives about 106 Pa of
+draft. With only the chimney after the plate, P2 would be **-115 Pa** (suction). The site shows
+**+87 Pa**. About 200 Pa is being lost between the plate and the chimney top,
+while the chimney as given accounts for 11 Pa (friction
+3.3, exit 8.0). The model carries this as an equivalent opening
+of 0.17 m² (`restriction_free_area_m2`). Possible causes, to be checked on site:
+
+1. 3 ft and 5 ft are **outside** dimensions. An inside top of about 1.4 ft
+   square would lose this much on its own.
+2. A damper, bend, long flue or soot between the plate and the chimney.
+3. Strong cooling in the chimney, so the real draft is well below 106 Pa.
+4. P2 is tapped somewhere other than just after the plate.
+
+Where the push goes at this point:
+
+| pushing | Pa | resisting | Pa |
+|---|---|---|---|
+| natural draft | 106 | kiln and flues | 178 |
+| fan | 300 | fan-to-plate duct | 1.2 |
+|  |  | plate (permanent loss) | 16.1 |
+|  |  | restriction | 200 |
+|  |  | chimney friction + exit | 11.3 |
+
+Other figures at this point: 11.4 t/h of gas; 3.0 m/s in the duct,
+6.1 m/s through the plate bore, 4.2 m/s at the chimney exit;
+fan air power 1.10 kW (about 1.8 kW at the shaft with the placeholder
+efficiency); the gas carries 348 kW above ambient and loses 52 kW
+through the chimney wall, leaving at 116 °C. Natural draft supplies 26 % of the push.
+
+![chimney_profile.png](simulation-report/chimney_profile.png)
+
+Outside air pressure at the chimney top is 434 Pa below ground level
+(1.159 against 1.164 kg/m³). The draft exists because the hot gas inside
+(0.890 kg/m³ at the top) is lighter still.
+
+## 4. What the fan does across its range, and what the transmitters can see
+
+| fan rpm | flow m³/s | draft Pa | fan adds Pa | fan inlet Pa | P1 Pa | P2 Pa | plate ΔP Pa | readable? | legacy value |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | 1.61 | 98 | -20 | -34 | -54 | -61 | 6.3 | **no** | – |
+| 150 | 2.08 | 101 | 30 | -58 | -28 | -39 | 10.5 | **no** | – |
+| 220 | 2.51 | 103 | 87 | -84 | 3 | -12 | 15.3 | **no** | – |
+| 260 | 2.78 | 104 | 130 | -103 | 27 | 8 | 18.8 | yes | 30.1 |
+| 300 | 3.06 | 105 | 180 | -125 | 54 | 31 | 22.8 | yes | 34.1 |
+| 340 | 3.36 | 106 | 237 | -150 | 86 | 58 | 27.5 | yes | 32.5 |
+| 380 | 3.66 | 106 | 301 | -178 | 121 | 89 | 32.6 | yes | 31.0 |
+| 420 | 3.97 | 107 | 372 | -210 | 161 | 122 | 38.4 | yes | 29.8 |
+| 450 | 4.21 | 107 | 430 | -235 | 193 | 150 | 43.1 | yes | 29.1 |
 
 ![pressures_vs_rpm.png](simulation-report/pressures_vs_rpm.png)
 
-* Flow rises from 3.21 to 6.28 m³/s over the fan's range, but **not in proportion to rpm** —
-  the draft is a fixed head start (it barely moves: 129 → 132 Pa, only because the faster gas
-  cools less in the chimney).
-* A stopped fan is a small restriction (-26 Pa), not a blockage, so natural draft still flows.
-* **At 1500 rpm the downstream pressure P2 is -538 Pa, 108 % of the placeholder
-  ±500 Pa transmitter range**: the P2 transmitter would saturate at the fan's top speed. The transmitter range,
-  the plate β and the fan size have to be chosen together (§5.5).
+* A stopped fan is a small restriction (-20 Pa), not a blockage: natural draft still moves 1.61 m³/s.
+* **Below about 245 rpm (2.67 m³/s) P2 is under suction and a 0–250 Pa transmitter cannot
+  read it.** Neither the controller's flow nor the legacy value exists there. In the closed loop, a setpoint in that region
+  makes the controller under-read the flow and the fan hunts (covered by a test).
+* The placeholder minimum speed (220 rpm) is **inside** that unreadable region. The minimum speed, the
+  transmitter range and the resonance band (150–210 rpm) have to be chosen together.
+* At 450 rpm P1 is 193 Pa, 77 % of the transmitter range.
 
 ![flow_vs_rpm.png](simulation-report/flow_vs_rpm.png)
 
-## 4. Which parameters matter most
+## 5. The legacy formula value
 
-Two views, because "which matters" depends on how you compare. The **relative** view moves each parameter by ±10 % of its
-*own value* (physics only); the **slider-travel** view moves each slider by ±10 % of its *range* (what you feel when
-dragging in the GUI). Output shown: the fan speed needed to hold 4.5 m³/s (centre: 875 rpm), plus the
-natural-draft-only flow and the flow at a fixed 900 rpm.
+`calc_pv` is called unchanged, with the default constants from `fan-ctrl/config.py`, the gauge pressures and the
+temperature in kelvin. At the site reading it gives **31.0**; the old screen showed an averaged 40.33.
+(With `a2 = 0.6096` in place of `0.6096²` it gives 50.9. Which constant the old system used is still open.)
 
-**±10 % of each parameter's own value**
+The formula uses the **ratio P2/P1 of two gauge pressures**, so it depends on the pressure level at the plate and not only
+on the differential:
 
-| Parameter | −10 % → +10 % | natural flow m³/s | flow at 900 rpm m³/s | rpm for 4.5 |
-|---|---|---|---|---|
-| Duct diameter | 0.9 m → 1.1 m | 2.70 → 3.70 | 3.85 → 5.25 | 1183 → 619 |
-| Plate beta (bore / duct) | 0.54 → 0.66 | 2.69 → 3.67 | 3.84 → 5.21 | 1188 → 633 |
-| Gas molar mass | 25.6 g/mol → 31.4 g/mol | 3.66 → 2.78 | 4.89 → 4.28 | 727 → 980 |
-| Plate discharge coefficient | 0.55 → 0.671 | 3.03 → 3.37 | 4.31 → 4.79 | 978 → 789 |
-| Fan rated speed | 1350 rpm → 1650 rpm | 3.21 → 3.21 | 4.82 → 4.36 | 788 → 963 |
-| Kiln gas temperature (before heat reuse) | 225 degC → 275 degC | 3.03 → 3.38 | 4.44 → 4.68 | 924 → 824 |
-| Chimney height | 27 m → 33 m | 3.05 → 3.36 | 4.45 → 4.67 | 919 → 830 |
-| Fan free-delivery flow | 10.8 m3/s → 13.2 m3/s | 3.13 → 3.27 | 4.46 → 4.64 | 917 → 843 |
-| Fan shut-off pressure | 540 Pa → 660 Pa | 3.24 → 3.18 | 4.49 → 4.63 | 904 → 852 |
-| Heat-reuse tunnel loss | 2.7 → 3.3 | 3.23 → 3.18 | 4.60 → 4.53 | 862 → 889 |
-| Chimney diameter | 1.08 m → 1.32 m | 3.18 → 3.22 | 4.52 → 4.59 | 891 → 867 |
-| Heat extracted by reuse | 0.18 fraction → 0.22 fraction | 3.25 → 3.17 | 4.59 → 4.53 | 863 → 887 |
-| Ambient temperature | 22.5 degC → 27.5 degC | 3.24 → 3.18 | 4.58 → 4.54 | 866 → 884 |
-| Duct loss (kiln exit to plate) | 1.8 → 2.2 | 3.22 → 3.19 | 4.58 → 4.54 | 867 → 884 |
-| Gas specific heat | 990 J/kg/K → 1210 J/kg/K | 3.20 → 3.21 | 4.56 → 4.57 | 877 → 874 |
-| Chimney wall heat loss | 2.7 W/m2/K → 3.3 W/m2/K | 3.21 → 3.20 | 4.57 → 4.56 | 874 → 877 |
-| Chimney friction factor | 0.018 → 0.022 | 3.21 → 3.21 | 4.56 → 4.56 | 874 → 876 |
-| Atmospheric pressure | 95000 Pa → 105000 Pa | 3.20 → 3.21 | 4.56 → 4.56 | 876 → 875 |
-
-![tornado_relative.png](simulation-report/tornado_relative.png)
-
-**±10 % of each slider's travel** (depends on the slider ranges, which are my choice)
-
-| Parameter | moved to | natural flow m³/s | flow at 900 rpm m³/s | rpm for 4.5 |
-|---|---|---|---|---|
-| Duct diameter | 0.9 m → 1.1 m | 2.70 → 3.70 | 3.85 → 5.25 | 1183 → 619 |
-| Plate beta (bore / duct) | 0.555 → 0.645 | 2.82 → 3.56 | 4.02 → 5.06 | 1102 → 689 |
-| Fan rated speed | 1300 rpm → 1700 rpm | 3.21 → 3.21 | 4.93 → 4.30 | 759 → 992 |
-| Kiln gas temperature (before heat reuse) | 202 degC → 298 degC | 2.85 → 3.53 | 4.32 → 4.79 | 966 → 774 |
-| Fan free-delivery flow | 9.4 m3/s → 14.6 m3/s | 3.02 → 3.32 | 4.30 → 4.72 | 983 → 815 |
-| Chimney height | 24.5 m → 35.5 m | 2.91 → 3.48 | 4.36 → 4.76 | 953 → 791 |
-| Heat-reuse tunnel loss | 1.5 → 4.5 | 3.34 → 3.09 | 4.74 → 4.40 | 806 → 939 |
-| Fan shut-off pressure | 460 Pa → 740 Pa | 3.29 → 3.13 | 4.39 → 4.71 | 950 → 825 |
-| Duct loss (kiln exit to plate) | 1 → 3 | 3.29 → 3.13 | 4.67 → 4.46 | 832 → 917 |
-| Heat extracted by reuse | 0.14 fraction → 0.26 fraction | 3.33 → 3.08 | 4.65 → 4.47 | 839 → 911 |
-| Gas molar mass | 27.7 g/mol → 29.3 g/mol | 3.33 → 3.09 | 4.65 → 4.48 | 839 → 908 |
-| Plate discharge coefficient | 0.595 → 0.625 | 3.17 → 3.25 | 4.50 → 4.62 | 899 → 853 |
-| Chimney diameter | 1 m → 1.4 m | 3.15 → 3.22 | 4.48 → 4.59 | 909 → 863 |
-| Ambient temperature | 19.5 degC → 30.5 degC | 3.28 → 3.14 | 4.61 → 4.51 | 855 → 894 |
-| Chimney wall heat loss | 1.5 W/m2/K → 4.5 W/m2/K | 3.24 → 3.18 | 4.58 → 4.55 | 869 → 882 |
-| Chimney friction factor | 0.0145 → 0.0255 | 3.21 → 3.20 | 4.57 → 4.56 | 873 → 878 |
-| Gas specific heat | 1060 J/kg/K → 1140 J/kg/K | 3.21 → 3.21 | 4.56 → 4.56 | 876 → 875 |
-| Atmospheric pressure | 100325 Pa → 102325 Pa | 3.21 → 3.21 | 4.56 → 4.56 | 876 → 875 |
-| Kiln gauge pressure | -10 Pa → 10 Pa | 3.21 → 3.21 | 4.56 → 4.56 | 875 → 875 |
-
-What stands out (relative view):
-
-* **Geometry dominates.** Duct diameter and Plate beta (bore / duct) are the top two: a 10 % change moves the rpm
-  needed by roughly 564 rpm. That is the 1/diameter⁴ effect.
-  They are fixed by the installation, but they are also the parameters you can check on site with a tape measure.
-* **Gas molar mass is the biggest thing nobody controls.** It moves the rpm needed by
-  253 rpm for ±10 % (wood moisture and
-  firing stage change the flue-gas composition), through both the draft (density) and the controller's estimate.
-* **Temperatures matter less than intuition says:** ±10 % of kiln temperature (±25 K) and ±10 % of ambient (±2.5 K)
-  move the rpm needed by 100
-  and 18 rpm. Weather is a small disturbance here (but see §5.2 for big swings).
-* **Almost no effect:** atmospheric pressure, kiln gauge pressure, gas specific heat and chimney friction/wall loss
-  (within ±10 %). Atmospheric pressure and kiln gauge pressure only shift P1/P2 levels; the flow does not change.
-
-## 5. How parameters interact
-
-### 5.1 The fan matters less when the draft is strong
-
-Same fan move (0 → 900 rpm) in different weather and chimney heights:
-
-| outside T °C | chimney m | draft Pa | flow, fan stopped m³/s | flow at 900 rpm m³/s | fan adds m³/s |
-|---|---|---|---|---|---|
-| -5 | 15 | 84 | 2.57 | 4.13 | 1.57 |
-| -5 | 30 | 165 | 3.60 | 4.85 | 1.24 |
-| -5 | 45 | 246 | 4.39 | 5.45 | 1.07 |
-| 15 | 15 | 71 | 2.38 | 4.02 | 1.64 |
-| 15 | 30 | 140 | 3.34 | 4.65 | 1.32 |
-| 15 | 45 | 209 | 4.06 | 5.19 | 1.14 |
-| 35 | 15 | 60 | 2.20 | 3.92 | 1.72 |
-| 35 | 30 | 119 | 3.08 | 4.48 | 1.39 |
-| 35 | 45 | 177 | 3.75 | 4.96 | 1.21 |
-
-The fan adds **1.07–1.72 m³/s** depending on the draft already there: 1.72 m³/s at the weakest draft
-(60 Pa) but only 1.07 m³/s at the strongest (246 Pa). Reason: flow ∝ √(draft + fan push), so each extra pascal of
-fan push buys less flow when the total is already large. **The loop gain of the fan therefore changes with the weather and
-the kiln temperature** — a fixed tuning is a compromise (it does cope here, §6).
-
-### 5.2 Weather × kiln temperature decide how hard the fan works
-
-Fan rpm needed to hold 4.5 m³/s:
-
-| outside T °C ↓ / kiln gas °C → | 150 | 200 | 250 | 300 | 350 | 400 |
+| restriction free area m² | fan rpm | true flow m³/s | plate ΔP Pa | P1 Pa | P2 Pa | legacy value |
 |---|---|---|---|---|---|---|
-| -10 | 957 | 848 | 722 | 568 | 352 | 0 |
-| 0 | 989 | 888 | 773 | 638 | 464 | 157 |
-| 10 | 1018 | 923 | 818 | 696 | 549 | 342 |
-| 20 | 1043 | 955 | 857 | 747 | 617 | 450 |
-| 30 | 1067 | 984 | 893 | 791 | 674 | 532 |
-| 40 | 1088 | 1010 | 924 | 830 | 723 | 598 |
+| 0.13 | 433 | 3.60 | 31.5 | 251 | 219 | 23.3 |
+| 0.15 | 397 | 3.60 | 31.5 | 169 | 137 | 27.4 |
+| 0.17 | 372 | 3.60 | 31.5 | 114 | 82 | 31.2 |
+| 0.2 | 345 | 3.60 | 31.5 | 60 | 28 | 34.0 |
+| 0.25 | 318 | 3.60 | 31.5 | 10 | -22 | – |
+
+![legacy_value.png](simulation-report/legacy_value.png)
+
+* **Same flow, different back-pressure, different value** (23.3 to 34.0 above; "–" means P2 fell below 0 Pa and
+  the formula has no answer).
+  Soot build-up or a damper after the plate would move the legacy value with no change in flow.
+* **In this model the legacy value is not a steady function of flow.** It peaks at 34.1 near
+  300 rpm and then **falls** as the fan speeds up, because P2/P1 rises towards 1 when the back-pressure
+  grows faster than the differential. A PID on a value that falls when flow rises would drive the wrong way.
+* The real system was controlled with this value for years, so one of these must be true: the real back-pressure does not
+  grow like the modelled restriction; or the old system fed the formula something other than plain gauge pressures; or the
+  plant only ever ran on the rising side. **A speed step test on site (rpm against P1 and P2, five or six speeds) would
+  settle this and the restriction question in §3 together.** Until then the simulation shows the legacy value and does
+  not control with it.
+
+## 6. How parameters interact
+
+### 6.1 The fan matters less when the draft is strong
+
+Same fan move (0 → 380 rpm) in different weather and chimney heights:
+
+| outside T °C | chimney m | draft Pa | flow, fan stopped m³/s | flow at 380 rpm m³/s | fan adds m³/s |
+|---|---|---|---|---|---|
+| 10 | 20 | 69 | 1.36 | 3.55 | 2.19 |
+| 10 | 38.1 | 128 | 1.84 | 3.77 | 1.93 |
+| 10 | 55 | 179 | 2.18 | 3.95 | 1.78 |
+| 25 | 20 | 57 | 1.23 | 3.50 | 2.27 |
+| 25 | 38.1 | 105 | 1.67 | 3.69 | 2.02 |
+| 25 | 55 | 147 | 1.97 | 3.85 | 1.88 |
+| 40 | 20 | 47 | 1.11 | 3.46 | 2.35 |
+| 40 | 38.1 | 85 | 1.50 | 3.61 | 2.12 |
+| 40 | 55 | 118 | 1.77 | 3.75 | 1.98 |
+
+The fan adds **1.78–2.35 m³/s** depending on the draft already there: 2.35 m³/s at the
+weakest draft (47 Pa) and 1.78 m³/s at the strongest (179 Pa). The fan's
+effect on flow, and so the loop gain, changes with weather and exhaust temperature.
+
+### 6.2 Weather × exhaust temperature decide how hard the fan works
+
+Fan rpm needed to hold 3.6 m³/s:
+
+| outside T °C ↓ / exhaust gas °C → | 90 | 110 | 130 | 160 | 200 | 250 |
+|---|---|---|---|---|---|---|
+| 10 | 379 | 368 | 357 | 341 | 317 | 284 |
+| 20 | 385 | 375 | 365 | 349 | 327 | 297 |
+| 30 | 391 | 381 | 372 | 357 | 336 | 308 |
+| 40 | 396 | 387 | 378 | 364 | 344 | 318 |
 
 ![rpm_needed_heatmap.png](simulation-report/rpm_needed_heatmap.png)
 
-The required speed runs from 0 rpm (cold air, hot kiln) to 1088 rpm (warm air, cool kiln). In the
-corner with cold air and a very hot kiln the draft alone exceeds the setpoint and the fan can stop (0 rpm); if `motor_min_rpm` > 0 the fan
-would run anyway and the flow would sit above the setpoint. Kiln temperature moves the answer more than weather does across these ranges
-(a 250 K kiln swing against a 50 K weather swing), but both matter.
+The required speed runs from 284 rpm (cool air, hot gas) to 396 rpm (hot air, cool gas).
 
-### 5.3 There is a minimum flow the loop cannot go below
+### 6.3 There is a minimum flow the loop cannot go below
 
-The fan can add flow but cannot brake it. The lowest flow the loop can hold is what natural draft gives at the fan's
-minimum speed, and it rises in cold weather:
+The fan can add flow but cannot brake it:
 
-| outside T °C | natural draft alone m³/s | lowest holdable (fan at 200 rpm) m³/s | highest holdable (fan at 1500 rpm) m³/s |
+| outside T °C | natural draft alone m³/s | lowest holdable (fan at 220 rpm) m³/s | highest holdable (fan at 450 rpm) m³/s |
 |---|---|---|---|
-| -10 | 3.67 | 3.74 | 6.52 |
-| 0 | 3.54 | 3.61 | 6.45 |
-| 10 | 3.40 | 3.48 | 6.37 |
-| 20 | 3.27 | 3.35 | 6.31 |
-| 30 | 3.15 | 3.23 | 6.24 |
-| 40 | 3.02 | 3.11 | 6.18 |
+| 10 | 1.84 | 2.66 | 4.30 |
+| 20 | 1.72 | 2.58 | 4.25 |
+| 30 | 1.61 | 2.51 | 4.21 |
+| 40 | 1.50 | 2.44 | 4.17 |
 
 ![operating_envelope.png](simulation-report/operating_envelope.png)
 
-A setpoint below the "lowest holdable" line is simply unreachable with the fan alone: the PID pins the fan at minimum and the
-flow stays above the setpoint (you can see this in the GUI by raising chimney height and lowering outside temperature). Holding lower flows would need a
-damper. The envelope also tells you which setpoints are realistic in each season.
+A setpoint below the "lowest holdable" line cannot be reached with the fan alone; holding lower flows would need a damper.
 
-### 5.4 Heat reuse (inside the kiln) interacts with the draft, the pressures and the measurement
+### 6.4 Chimney taper
 
-Two separate effects of the reuse tunnels, plotted as extraction (how much heat is taken) × tunnel loss (how much they resist):
-
-| heat extracted | tunnel loss K | T at plate °C | natural flow m³/s | flow at 900 rpm | P1 Pa | plate ΔP Pa | rpm for 4.5 |
-|---|---|---|---|---|---|---|---|
-| 0 % | 0 | 250 | 3.89 | 5.24 | -30 | 266 | 580 |
-| 0 % | 3 | 250 | 3.60 | 4.85 | -63 | 229 | 747 |
-| 0 % | 9 | 250 | 3.17 | 4.28 | -108 | 178 | 1001 |
-| 20 % | 0 | 205 | 3.48 | 4.94 | -29 | 260 | 731 |
-| 20 % | 3 | 205 | 3.21 | 4.56 | -63 | 221 | 875 |
-| 20 % | 9 | 205 | 2.81 | 4.01 | -108 | 171 | 1109 |
-| 40 % | 0 | 160 | 3.02 | 4.63 | -28 | 251 | 855 |
-| 40 % | 3 | 160 | 2.77 | 4.26 | -63 | 213 | 988 |
-| 40 % | 9 | 160 | 2.42 | 3.72 | -107 | 162 | 1211 |
-
-* **Extraction cools the gas** → the buoyancy advantage over the outside air shrinks → less draft. 0 % → 40 % extraction (tunnel loss 3) moves the natural flow
-  3.60 → 2.77 m³/s and the rpm needed 747 → 988.
-* **Tunnel loss is pure resistance** → less flow for the same push, and because it sits *before* the plate it deepens the suction at
-  **P1 and P2 together** (-29 → -108 Pa at P1) while the plate ΔP only changes through the lower flow.
-* The two **compound**: the worst corner (40 % extraction, loss 9) needs 1211 rpm against 580 rpm for no reuse.
-* Practical consequence: **anything that changes the reuse (a damper, a different stage in use, fouling of the tunnels) changes
-  the flow and the P1/P2 levels at the same fan speed, even though nothing changed at the plate.** The PID has to absorb it, and a
-  sudden P1/P2 shift with no change in ΔP is a clue that the cause is upstream.
-
-### 5.5 Plate bore, transmitter range and flow resolution
-
-A smaller bore (lower β) gives a stronger plate signal but costs fan work and pushes the pressures out of the transmitter range:
-
-| plate β | rpm for 4.5 | plate ΔP Pa | P2 Pa | P2 vs ±range | ΔP expressed in PLC counts (full scale 6000) | flow resolution % per count |
+| top inside side m | ft | exit loss Pa | friction Pa | flow at 380 rpm m³/s | P2 Pa | rpm for 3.6 |
 |---|---|---|---|---|---|---|
-| 0.40 | 2484 (> motor max) | 1220 | -1281 | 256 % | 7318 | 0.007 |
-| 0.50 | 1455 | 481 | -542 | 108 % | 2884 | 0.017 |
-| 0.60 | 875 | 215 | -276 | 55 % | 1291 | 0.039 |
-| 0.70 | 498 | 101 | -163 | 33 % | 608 | 0.082 |
+| 0.5 | 1.6 | 74.6 | 20.5 | 3.34 | 141 | 417 |
+| 0.7 | 2.3 | 22.5 | 7.5 | 3.59 | 100 | 381 |
+| 0.914 | 3.0 | 8.0 | 3.3 | 3.66 | 89 | 372 |
+| 1.2 | 3.9 | 2.7 | 1.5 | 3.69 | 84 | 369 |
+| 1.524 | 5.0 | 1.0 | 0.8 | 3.69 | 83 | 368 |
 
-* β is a three-way trade: **signal strength** (resolution per count), **fan work** (rpm needed), and **transmitter headroom**
-  (P2 versus the range). At β = 0.4 the signal is huge but the fan cannot reach the setpoint and P2 is 256 % of the range; at
-  β = 0.7 the fan hardly works but each PLC count is 2.1× coarser than at β = 0.6.
+The exit loss goes as 1/side⁴. At 3 ft the top costs 8 Pa; at 1.6 ft it would cost
+75 Pa and raise P2 to 141 Pa. This is why the inside dimension of the top matters (§3, cause 1).
 
-The square-root law also makes the resolution depend on the flow itself (default plate and range):
+### 6.5 Plate bore, transmitter range and flow resolution
+
+| plate β | rpm for 3.6 | plate ΔP Pa | P1 Pa | P1 vs range | ΔP in PLC counts (full scale 6000) | flow resolution % per count |
+|---|---|---|---|---|---|---|
+| 0.50 | 415 | 149 | 207 | 83 % | 3586 | 0.014 |
+| 0.60 | 384 | 67 | 140 | 56 % | 1606 | 0.031 |
+| 0.70 | 372 | 32 | 114 | 45 % | 757 | 0.066 |
+| 0.75 | 369 | 22 | 107 | 43 % | 517 | 0.097 |
+
+A smaller bore gives a stronger signal but costs fan speed and pushes P1 towards the top of the transmitter range.
 
 | flow m³/s | plate ΔP Pa | ΔP counts | flow resolution % per count | can the loop hold it? |
 |---|---|---|---|---|
-| 1.5 | 24 | 143 | 0.349 | no (outside the envelope) |
-| 2.5 | 66 | 399 | 0.125 | no (outside the envelope) |
-| 3.5 | 130 | 781 | 0.064 | yes |
-| 4.5 | 215 | 1291 | 0.039 | yes |
-| 5.5 | 321 | 1929 | 0.026 | yes |
+| 1.5 | 5.5 | 131 | 0.381 | no (outside the envelope) |
+| 2.0 | 9.7 | 234 | 0.214 | no (outside the envelope) |
+| 2.5 | 15.2 | 365 | 0.137 | no (outside the envelope) |
+| 3.0 | 21.9 | 525 | 0.095 | yes |
+| 3.5 | 29.8 | 715 | 0.070 | yes |
+| 4.0 | 38.9 | 934 | 0.054 | yes |
 
-Across the flows the loop can actually hold, one count is a 2.5× bigger slice of the flow at 3.5 m³/s than at
-5.5 m³/s (0.064 % against 0.026 % per count). With the placeholder range that is fine; on the real transmitters a range
-chosen for the top of the fan's range may leave too little resolution at the low end.
+Across the flows the loop can hold, one count is a 1.8× bigger slice of the flow at
+3.0 m³/s than at 4.0 m³/s. The ΔP is only about 33 Pa of a 250 Pa range, read as the
+difference of two transmitters, so each count is about 0.06 % of flow.
 
-### 5.6 What measurement errors do to the TRUE flow
+### 6.6 What measurement errors do to the TRUE flow
 
-The controller adjusts the fan until *its estimate* equals the setpoint (4.5 m³/s). If the estimate is wrong the true flow ends up elsewhere.
-
-True flow when the controller thinks it holds 4.5 m³/s:
+The controller adjusts the fan until *its estimate* equals the setpoint (3.6 m³/s). True flow in that case:
 
 | assumed Cd error ↓ / assumed gas molar mass → | 26.0 g/mol | 28.5 g/mol | 31.0 g/mol |
 |---|---|---|---|
-| -5 % | 4.52 | 4.74 | 4.94 |
-| +0 % | 4.30 | 4.50 | 4.69 |
-| +5 % | 4.09 | 4.29 | 4.47 |
-| +10 % | 3.91 | 4.09 | 4.27 |
+| -5 % | 3.62 | 3.79 | 3.95 |
+| +0 % | 3.44 | 3.60 | 3.75 |
+| +5 % | 3.27 | 3.43 | 3.58 |
+| +10 % | 3.13 | 3.27 | 3.41 |
 
-* The true gas is 28.5 g/mol. Assuming it is heavier than it is (31) makes the true flow **+4.3 %**; lighter (26) gives
-  **-4.5 %**. Believing the plate Cd is 5 % higher than it is gives **-4.8 %**. These errors are *invisible to the controller*:
-  it always reports "on setpoint".
+* The true gas is 28.5 g/mol. Assuming 31 gives **+4.3 %**, assuming 26 gives
+  **-4.5 %**; believing the plate Cd is 5 % higher than it is gives **-4.8 %**.
+  The controller reports "on setpoint" in every case.
 
-Transmitter drift (offset added to one reading), true flow when the controller holds 4.5:
+| drift | P1 reads high by (Pa) | P2 reads high by (Pa) |
+|---|---|---|
+| -10 | 4.13 | 2.97 |
+| -5 | 3.87 | 3.30 |
+| +5 | 3.30 | 3.87 |
+| +10 | 2.97 | 4.13 |
 
-| drift (Pa or °C) | P1 reads high by | P2 reads high by | temperature reads high by |
-|---|---|---|---|
-| -30 | 4.80 | 4.17 | 4.65 |
-| -10 | 4.60 | 4.39 | 4.55 |
-| +10 | 4.39 | 4.60 | 4.45 |
-| +30 | 4.17 | 4.80 | 4.37 |
+* **A small drift is a large flow error**, because the ΔP is small: P2 reading 5 Pa high gives 3.87 m³/s
+  (+7.6 %). The same drift on P1 gives the opposite error; equal drift on both cancels.
+* Temperature drift matters least: +30 K gives -3.5 %.
 
-* **P1 and P2 drift in opposite senses**, because only their difference counts: P2 reading 10 Pa high gives 4.60 m³/s
-  (+2.3 %); the same drift on P1 gives the opposite error. A common-mode drift of both cancels. With a ΔP of ~221 Pa at this flow,
-  a 10 Pa error is a ~2 % flow error (half the ΔP error, from the square root).
-* **Temperature drift matters least**: +30 K → -3.0 % flow (only the gas density in the flow equation depends on it).
+## 7. Which parameters matter most
 
-## 6. How the control loop behaves
+Each parameter moved by ±10 % of its own value; output: fan speed needed for 3.6 m³/s (centre 372 rpm).
 
-Closed loop with the real `PIDController` (parallel form: `kp·e + ki·∫e + kd·de/dt`, output 0–100 % of the PID speed range).
-Setpoint step 4.0 → 5.0 m³/s, no sensor noise, settling = within 2 % of the final value:
+| Parameter | −10 % → +10 % | natural flow m³/s | flow at 380 rpm m³/s | rpm for 3.6 |
+|---|---|---|---|---|
+| Fan rated speed | 342 rpm → 418 rpm | 1.61 → 1.61 | 3.99 → 3.40 | 335 → 409 |
+| Gas molar mass | 25.6 g/mol → 31.4 g/mol | 1.98 → 1.22 | 3.83 → 3.52 | 348 → 390 |
+| Restriction after the plate (free area) | 0.153 m2 → 0.187 m2 | 1.54 → 1.67 | 3.50 → 3.80 | 393 → 355 |
+| Kiln and flue free area | 0.162 m2 → 0.198 m2 | 1.54 → 1.67 | 3.52 → 3.78 | 391 → 357 |
+| Fan shut-off pressure | 504 Pa → 616 Pa | 1.63 → 1.59 | 3.55 → 3.77 | 387 → 359 |
+| Fan free-delivery flow | 6.57 m3/s → 8.03 m3/s | 1.57 → 1.64 | 3.58 → 3.73 | 383 → 363 |
+| Exhaust gas temperature | 117 degC → 143 degC | 1.50 → 1.71 | 3.62 → 3.71 | 378 → 365 |
+| Plate beta (bore / duct) | 0.63 → 0.75 | 1.58 → 1.62 | 3.61 → 3.69 | 379 → 369 |
+| Chimney height | 34.3 m → 41.9 m | 1.53 → 1.68 | 3.63 → 3.70 | 376 → 367 |
+| Duct diameter | 1.12 m → 1.38 m | 1.60 → 1.62 | 3.63 → 3.68 | 376 → 369 |
+| Chimney side at the top | 0.823 m → 1.01 m | 1.60 → 1.61 | 3.64 → 3.67 | 374 → 370 |
+| Ambient temperature | 27 degC → 33 degC | 1.64 → 1.58 | 3.68 → 3.65 | 370 → 374 |
+| Plate discharge coefficient | 0.55 → 0.671 | 1.60 → 1.62 | 3.65 → 3.67 | 373 → 370 |
+| Gas specific heat | 990 J/kg/K → 1210 J/kg/K | 1.60 → 1.62 | 3.66 → 3.67 | 372 → 371 |
+| Chimney wall heat loss | 2.7 W/m2/K → 3.3 W/m2/K | 1.62 → 1.60 | 3.67 → 3.66 | 371 → 372 |
+| Atmospheric pressure | 95000 Pa → 105000 Pa | 1.60 → 1.61 | 3.66 → 3.66 | 372 → 372 |
+| Chimney friction factor | 0.027 → 0.033 | 1.61 → 1.61 | 3.66 → 3.66 | 372 → 372 |
+| Chimney side at the base | 1.37 m → 1.68 m | 1.62 → 1.60 | 3.66 → 3.66 | 372 → 372 |
+| Duct loss (fan to plate) | 0.27 → 0.33 | 1.61 → 1.61 | 3.66 → 3.66 | 372 → 372 |
+
+![tornado_relative.png](simulation-report/tornado_relative.png)
+
+* **The fan curve leads** (Fan rated speed: 74 rpm of swing). The real fan curve or nameplate is the
+  most valuable missing fact.
+* **Gas molar mass** moves the answer by 42 rpm and nobody controls it (wood moisture, firing stage).
+* **The two unknown resistances** follow: restriction after the plate (38 rpm) and kiln free
+  area (34 rpm). The kiln free area changes all day as dampers move.
+* Exhaust temperature ±10 % moves it 13 rpm; chimney height 9 rpm.
+* The chimney's own size barely matters while the restriction dominates: top side 4 rpm.
+
+The same sweep by ±10 % of each slider's travel (depends on the slider ranges chosen for the GUI):
+
+| Parameter | moved to | rpm for 3.6 |
+|---|---|---|
+| Restriction after the plate (free area) | 0.05 m2 → 0.465 m2 | 933 → 279 |
+| Kiln and flue free area | 0.085 m2 → 0.275 m2 | 595 → 321 |
+| Fan rated speed | 250 rpm → 510 rpm | 245 → 499 |
+| Fan free-delivery flow | 4.5 m3/s → 10.1 m3/s | 442 → 348 |
+| Fan shut-off pressure | 420 Pa → 700 Pa | 415 → 343 |
+| Exhaust gas temperature | 82 degC → 178 degC | 395 → 348 |
+| Chimney side at the top | 0.644 m → 1.18 m | 386 → 369 |
+| Chimney height | 32.6 m → 43.6 m | 378 → 365 |
+| Gas molar mass | 27.7 g/mol → 29.3 g/mol | 366 → 377 |
+| Kiln gauge pressure | -10 Pa → 10 Pa | 377 → 367 |
+
+## 8. How the control loop behaves
+
+Closed loop with the real `PIDController`, output mapped to 220–450 rpm. Setpoint step
+3.2 → 3.8 m³/s, no sensor noise, settled = within 2 %:
 
 | Kp ↓ / Ki → | Ki 0.05 | Ki 0.2 | Ki 0.5 |
 |---|---|---|---|
-| Kp 0.5 | settle 116 s, overshoot 0.0 % | settle 23 s, overshoot 0.1 % | settle 20 s, overshoot 23.0 % |
-| Kp 1.5 | settle 138 s, overshoot 0.0 % | settle 29 s, overshoot 0.1 % | settle 8 s, overshoot 9.3 % |
-| Kp 3.0 | settle 161 s, overshoot 0.0 % | settle 34 s, overshoot 0.1 % | settle 6 s, overshoot 9.2 % |
+| Kp 0.5 | settle 189 s, overshoot 0.0 % | settle 43 s, overshoot 0.0 % | settle 15 s, overshoot 4.3 % |
+| Kp 1.5 | settle 201 s, overshoot 0.0 % | settle 48 s, overshoot 0.0 % | settle 15 s, overshoot 0.0 % |
+| Kp 3.0 | settle 203 s, overshoot 0.0 % | settle 54 s, overshoot 0.1 % | settle 17 s, overshoot 0.0 % |
 
 ![loop_responses.png](simulation-report/loop_responses.png)
 
-* **At low and moderate Ki, Ki sets the speed and more Kp makes the final approach slower, not faster.** With this fast plant (gas lag a few seconds) the
-  proportional term does most of the job at once and the integral finishes it; the effective integral speed is about Ki ÷ (1 + Kp·plant gain),
-  so at Ki 0.05 settling goes 116 s → 138 s → 161 s as Kp rises 0.5 → 1.5 → 3. At high Ki (0.5) the loop
-  rings and more Kp damps it instead: overshoot 23 % → 9 %. This is a property of the
-  parallel form used here; the PLC's PID (PIDAT, 2-DOF with a proportional band) will not behave identically, so any tuning found here is a starting
-  point for the PLC, not a copy (open item in `TODO.md`).
-* The default Kp 1.5, Ki 0.2 settles in 29 s with 0.1 % overshoot: deliberately conservative.
-  Ki 0.5 is faster (8 s) but overshoots 9 %.
-
-How the **time constants** of the plant, motor, sensors and scan limit the loop (default gains):
+* Ki sets the speed. The default Kp 1.5, Ki 0.2 settles in 48 s with 0.0 % overshoot.
+  These gains are a starting point for the PLC's PID (PIDAT), not a copy: its form differs.
+* **Cold front** (outside 30 → 15 °C): the true flow deviates at most 0.06 m³/s
+  (1.6 %); the fan settles at 361 rpm.
+* **Fuel charges** (kiln opened 30 % wider for 60 s every 15 minutes): peak flow deviation
+  0.21 m³/s (5.9 %), fan speed moving between 338 and
+  372 rpm. The size of the opening is a guess; stage 2 will supply it from the kiln model.
+* **Saturation and windup:** after 10 minutes pinned at minimum speed, recovery takes **39 s with anti-windup
+  against 226 s without**. The PLC's PID must have anti-windup.
 
 | parameter | value s | settling | overshoot |
 |---|---|---|---|
-| Gas flow lag | 1.0 | 32 s | 0.1 % |
-| Gas flow lag | 3.0 | 29 s | 0.1 % |
-| Gas flow lag | 10.0 | 23 s | 1.6 % |
-| Gas flow lag | 30.0 | 80 s | 22.2 % |
-| Motor/fan lag | 0.5 | 31 s | 0.1 % |
-| Motor/fan lag | 2.0 | 29 s | 0.1 % |
-| Motor/fan lag | 8.0 | 21 s | 0.4 % |
-| Motor/fan lag | 20.0 | 65 s | 18.4 % |
-| Sensor lag | 0.5 | 30 s | 0.1 % |
-| Sensor lag | 1.0 | 29 s | 0.1 % |
-| Sensor lag | 5.0 | 13 s | 0.1 % |
-| Sensor lag | 10.0 | 30 s | 15.6 % |
-| Scan interval | 0.5 | 29 s | 0.1 % |
-| Scan interval | 1.0 | 29 s | 0.1 % |
-| Scan interval | 2.0 | 30 s | 0.1 % |
-| Scan interval | 5.0 | 30 s | 0.1 % |
+| Gas flow lag | 1.0 | 50 s | 0.0 % |
+| Gas flow lag | 3.0 | 48 s | 0.0 % |
+| Gas flow lag | 10.0 | 42 s | 0.1 % |
+| Gas flow lag | 30.0 | 102 s | 14.3 % |
+| Motor/fan lag | 0.5 | 50 s | 0.0 % |
+| Motor/fan lag | 2.0 | 48 s | 0.0 % |
+| Motor/fan lag | 8.0 | 42 s | 0.0 % |
+| Motor/fan lag | 20.0 | 44 s | 8.2 % |
+| Sensor lag | 0.5 | 49 s | 0.0 % |
+| Sensor lag | 1.0 | 48 s | 0.0 % |
+| Sensor lag | 5.0 | 40 s | 0.0 % |
+| Sensor lag | 10.0 | 27 s | 0.3 % |
+| Scan interval | 0.5 | 48 s | 0.0 % |
+| Scan interval | 1.0 | 48 s | 0.0 % |
+| Scan interval | 2.0 | 48 s | 0.0 % |
+| Scan interval | 5.0 | 50 s | 0.1 % |
 
-* The loop stays stable in every case tested, and the scan interval (0.5–5 s) hardly matters. A moderate lag even makes the conservative default
-  settle sooner (the controller over-drives a little), which is not a free improvement: overshoot appears once a lag reaches tens of seconds:
-  gas flow lag 30 s → 22 % overshoot and 80 s settling;
-  motor/fan lag 20 s → 18 % overshoot; sensor lag 10 s → 16 %.
-  A large fan on a big inertia, or impulse lines choked with tar (slow sensors), are the realistic ways to get there.
-* **Weather disturbance:** a cold front (outside 25 → 5 °C) lifts the natural flow to 3.47 m³/s; the loop moves the fan to 796 rpm. The true flow
-  deviates at most 0.12 m³/s (2.8 %) and is back within 2 % after 10 s.
-  With these placeholder numbers feed-forward on ambient temperature would add little (§7).
-* **Saturation and windup:** after 10 minutes with the setpoint below what the fan can reach (fan pinned at minimum), the time to get back to a reachable setpoint is
-  **8 s with anti-windup versus 1139 s without**. The real `PIDController` has no anti-windup of its own (the simulation adds it around it); the PLC's PID must have it, or the
-  loop will sit wound-up for many minutes after a long saturation (cold nights, hot kiln, a closed damper).
-* **Sensor faults** (covered by tests, not by a table): an open circuit (counts 8000) on P1, P2 or T drops the fan to the safe speed at once and the loop resumes bumplessly
-  when repaired. A *stuck* signal looks healthy to the controller and is not detected — the flow error then grows with the real process.
+* The loop stays stable for every lag tested; the worst cases are gas flow lag 30 s
+  (14 % overshoot) and motor lag 20 s
+  (8 %).
+* Sensor faults (covered by tests): an open circuit (counts 8000) on any channel drops the fan to the safe speed and the loop
+  resumes bumplessly when repaired. A stuck signal, or a transmitter pinned at the bottom of its range, looks healthy.
 
-## 7. What this suggests
+## 9. What this suggests
 
-1. **Measure these first on site** (largest effect on the answer, §4): duct diameter and plate bore (a tape measure), gas composition / molar mass (flue-gas analysis over a
-   firing cycle), plate Cd (calibration or a reference measurement), gas temperature at the plate, chimney height.
-2. **Check the transmitter range against the fan's top speed.** The placeholder shows P2 at 108 % of range at maximum rpm. Choose range, β and fan size together (§5.5).
-3. **Decide the minimum fan speed deliberately.** It sets the lowest flow you can hold (§5.3). If the process needs lower flows in cold weather, plan a damper.
-4. **Feed-forward on ambient temperature looks low priority** if the real plant resembles this model: the PID absorbs a 3 % transient and recovers in seconds. Revisit once real data exists.
-5. **Make sure the PLC's PID has anti-windup and bumpless start** (§6). Without them a long saturation costs many minutes.
-6. **Expect the same setting to behave differently in summer and winter** (the fan's loop gain changes by tens of percent with the draft, §5.1); tune at the awkward end.
-7. **A drifting P1 or P2 is a flow error you cannot see**; a ΔP-based cross-check or periodic zero check on both transmitters is worth having (§5.6).
+1. **Do a speed step test on site**: five or six fan speeds, log rpm, P1, P2 and temperature. It answers the restriction
+   question (§3), the legacy value question (§5) and gives a fan-and-system curve.
+2. **Confirm the chimney's inside dimensions** and what sits between the plate and the chimney.
+3. **Get the fan curve or nameplate** (§7).
+4. **Choose the minimum fan speed deliberately**: above the resonance band and above the speed where P2 can be read (§4).
+5. **Do not carry the legacy formula forward untested.** Characterise it against logs first (§5).
+6. **Zero-check both transmitters regularly**: 5 Pa of drift is a 8 % flow error (§6.6).
+7. **Make sure the PLC's PID has anti-windup and bumpless start** (§8).
 
-## 8. What the model leaves out
+## 10. What the model leaves out
 
-* All values are placeholders (§ top). Flows, pressures and rpm are illustrative.
-* Incompressible pressure balance (plate ΔP is ~0.22 % of atmospheric); hydrostatic effects in horizontal ducts ignored.
-* Heat reuse is a fixed extraction fraction and a fixed loss; in reality they depend on the stages in use and on fouling. Gas temperature at the plate follows the kiln with a first-order lag.
-* A stopped fan is a passive restriction (no windmilling); flow never reverses (it stalls at zero).
-* Gas composition is a single molar mass; no condensation, tar fouling, or moisture in the plate calculation.
-* The controller's flow estimate is a clean orifice equation, **not** the legacy empirical `calc_pv` (its input units are unverified and its constants must not be touched).
-* The PID is the textbook parallel form in `fan-ctrl/pid.py` with sim-side anti-windup and bumpless start; the PLC's PIDAT may differ.
-* No PLC/HMI/drive communication delays, no heartbeat or fallback-table behaviour (planned in `TODO.md`).
-* One kiln, one fan, one chimney, no interaction between several kilns or dampers.
+* Placeholder values (see top). The fit in §3 uses one operating point; one point cannot fix four unknowns.
+* The restriction stands for an unexplained loss. If the cause is cooling or a different tap position, its behaviour with
+  speed will differ from a fixed opening.
+* The kiln is one free area and one gas temperature. Dampers, fuel charges and the moving fire are stage 2
+  (`project/whole-kiln-simulation-plan.md`).
+* Incompressible pressure balance; static pressures only (velocity-head changes between sections ignored except the exit loss).
+* Fan heating ignored; a stopped fan is a passive restriction; flow never reverses.
+* Gas composition is a single molar mass; no condensation or tar. Reynolds numbers use the viscosity of air.
+* The PID is the parallel form in `fan-ctrl/pid.py` with simulation-side anti-windup and bumpless start.
+* No PLC, HMI or drive communication delays, heartbeat or fallback table.
 
-## 9. Reproduce
+## 11. Reproduce
 
 ```
 .venv\Scripts\activate

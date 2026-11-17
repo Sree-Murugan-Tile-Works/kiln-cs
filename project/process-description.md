@@ -17,16 +17,22 @@ confirmed are marked **(verify)**; unanswered questions are in §8.
   2. **The fan** — used when natural draft is not enough to achieve and control the required
      flow. The fan's effect on flow is therefore not constant: it depends on how much natural
      draft exists at that moment (weather, kiln temperature, chimney conditions).
-- Gas flow is measured across an **orifice plate** in the duct, upstream of the fan.
+- Gas flow is measured across an **orifice plate** in the duct, **between the fan and the chimney**
+  (owner correction, 2026-11-16; earlier versions of this document had it upstream of the fan).
 
 ```
-kiln (heat-reuse tunnels inside it) --> [duct] --> orifice plate (P1 | P2, T) --> fan --> chimney
+kiln and flues --> fan --> [short duct] --> orifice plate (P1 | P2, T) --> chimney
 ```
 
-The heat reuse happens **inside the kiln's own tunnels, before the plate** (owner, 2026-11-14), so the
-plate and fan see gas that has already been cooled and the temperature at the plate is lower than the
-firing-zone temperature. The plate -> fan -> chimney order is as drawn; whether any other branch sits
-between the plate and the fan is still **(verify)** — see §8.
+Because the plate is on the fan's discharge side, P1 and P2 are positive when the fan pushes hard
+and would be negative on natural draft alone. One site reading (LabVIEW screen, 17-03-2026) shows
+P1 119.2 Pa and P2 87 Pa at 130.4 degC and 380 rpm. The chimney is 125 ft tall and square, 5 ft at
+the base and 3 ft at the top (owner, 2026-11-16; another document says 120 ft).
+
+Heat reuse happens inside the kiln's own tunnels, before the fan (owner, 2026-11-14). It is not of
+interest for the flow control and is no longer modelled in the simulation. What sits between the
+plate and the chimney is **(verify)**: the site reading implies about 200 Pa of loss there that the
+chimney dimensions do not explain. See `project/simulation-report.md` §3.
 
 ## 2. Instruments
 
@@ -118,12 +124,16 @@ available.
 
 ## 8. Open questions (unanswered)
 
-- [x] Position of the plate relative to the heat-reuse branches: answered 2026-11-14 — the reuse is
-  inside the kiln tunnels, before the plate. Still open: is anything else between the plate and the fan?
-- [ ] Realistic temperature range at the plate.
-- [ ] Transmitter ranges and normal/maximum plate pressure drop; units behind the `±250`
-  engineering range.
-- [ ] Is the duct pressure at the plate negative (suction)?
+- [x] Position of the plate: answered 2026-11-16 — between the fan and the chimney. Heat reuse is
+  inside the kiln tunnels, before the fan (2026-11-14).
+- [ ] What is between the plate and the chimney, and are the chimney's 3 ft and 5 ft inside or outside
+  dimensions? (About 200 Pa of unexplained loss, `project/simulation-report.md` §3.)
+- [ ] Realistic temperature range at the plate (one reading: 130.4 degC).
+- [x] Transmitter ranges: P1 and P2 are 0-250 Pa (VelKilnMaster `docs/Kiln-Domain.md`). The `±250`
+  defaults in `fan-ctrl/config.py` do not match and need a decision.
+- [x] Is the duct pressure at the plate negative (suction)? No at normal speed: P1 119.2 Pa and P2 87 Pa
+  at 380 rpm. The simulation suggests it turns negative below about 245 rpm, where a 0-250 Pa
+  transmitter cannot read it.
 - [ ] What did the old system feed into the equation (pressure units, T in C or K)?
 - [ ] Does any record of the old system exist (original equation, constants, logged
   P1/P2/T/Q data)? Is the `calculation.py` `__main__` example a real operating point?

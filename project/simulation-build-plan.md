@@ -1,8 +1,9 @@
 # Simulation build plan (stages and commits)
 
 **Status:** written 2026-11-17. Owner asked for a multi-stage build with a commit after each stage.
-**No stage is built yet.** This file fixes the order of work and the design decisions so the build
-can resume at any stage.
+**Stages A to E (stage 1) are built and committed. Stages F to J (stage 2, the whole kiln) are not
+started.** This file fixes the order of work and the design decisions so the build can resume at
+any stage.
 **Scope:** `sim/`, `tests/sim/` and documents only. Dev machine only. No change to `fan-ctrl/`,
 `dashboard/` or hardware. The legacy `calc_pv` formula is called, never changed.
 
@@ -37,6 +38,17 @@ newer.
 | J | Stage 2.6: calibration against logs, upset studies | report in `project/` | Needs the site data in §5 |
 
 Stages A to E are stage 1. Stages F to J are stage 2. Stage J cannot be finished without site data.
+
+Status on 2026-11-17:
+
+| Stage | State | Note |
+|---|---|---|
+| A | done | Default case gives P1 121 Pa, P2 88 Pa at 380 rpm (site: 119.2 and 87) |
+| B | done | Charge and damper disturbances are off by default |
+| C | done | `sim/profile.py` |
+| D | done | Checked by headless screenshots at default, 100 rpm and 450 rpm. Not checked by eye: true-scale view, light theme, phone width |
+| E | done | `project/simulation-report.md` regenerated |
+| F to J | not started | |
 
 ---
 

@@ -187,3 +187,13 @@
   and a chart; resonance band shaded on the speed chart; chimney sliders show feet.
 - Checked with headless Edge screenshots at the default point, at 100 rpm and at 450 rpm. Not
   checked by eye: the true-scale view (switch off), the light theme, and a narrow phone-width window.
+
+## 2026-11-17 — Build stage E: report and documents
+- `sim/report.py` rewritten for the new model; `project/simulation-report.md` and 8 figures regenerated
+  (new: check against the site reading, chimney profile, legacy formula value, chimney taper).
+- `project/process-description.md` §1 and §8: plate is between the fan and the chimney; site reading,
+  chimney size and transmitter range recorded; the 200 Pa question added.
+- `project/whole-kiln-simulation-plan.md` §7 item 4: legacy formula figures corrected (31.0 / 50.9, not 1608 / 65).
+- `.claude/CLAUDE.md` test count (352), stage 1 plan and build plan status updated.
+- Stage 1 (stages A-E) is complete. Stage 2 (F-J) not started.
+- Left running: the simulation server started for the GUI check on port 5002 (stopping it was blocked).

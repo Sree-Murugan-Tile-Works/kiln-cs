@@ -2,8 +2,8 @@
 Generate the parameter-interaction report: ``python -m sim.report`` (repo root, venv active).
 
 Writes ``project/simulation-report.md`` and the figures in ``project/simulation-report/``. Every number
-in the text comes from ``sim.analysis`` (the same model the GUI runs), so rerunning after a change to
-the model or the placeholder defaults keeps the report honest.
+in the text comes from ``sim.analysis`` and ``sim.profile`` (the same model the GUI runs), so rerunning
+after a change to the model or the placeholder defaults keeps the report honest.
 """
 import math
 from datetime import date
@@ -14,15 +14,19 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from sim import analysis as an
-from sim.params import SPEC_BY_NAME, make_params
+from sim.params import SPEC_BY_NAME
 from sim.plant import solve_steady
+from sim.profile import build_profile
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_PATH = ROOT / "project" / "simulation-report.md"
 FIG_DIR = ROOT / "project" / "simulation-report"
 FIG_REL = "simulation-report"
 
-BLUE, ORANGE, GREEN, RED, GREY = "#2a6fdb", "#d2691e", "#1f8a4c", "#c8372d", "#6b7686"
+BLUE, ORANGE, GREEN, RED, GREY, MAGENTA = "#2a6fdb", "#d2691e", "#1f8a4c", "#c8372d", "#6b7686", "#a8327f"
+SITE = {"p1": 119.2, "p2": 87.0, "t_gas": 130.4, "rpm": 380.0, "screen_value": 40.33}   # LabVIEW screen, 17-03-2026
+STEP_START, STEP_TARGET = 3.2, 3.8
+FT_PER_M = 3.28084
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -33,17 +37,28 @@ def table(headers: list[str], rows: list[list]) -> str:
 
 
 def rpm(v) -> str:
-    return "n/a (beyond 3000)" if v is None else f"{v:.0f}"
+    return f"n/a (beyond {an.RPM_SEARCH_MAX:.0f})" if v is None else f"{v:.0f}"
 
 
 def secs(v: float) -> str:
     return "never (within the test)" if math.isinf(v) else f"{v:.0f} s"
 
 
+def num(v, digits: int = 1) -> str:
+    return "–" if v is None else f"{v:.{digits}f}"
+
+
 def value(name: str, v: float) -> str:
     spec = SPEC_BY_NAME[name]
     text = f"{v:.3g}" if abs(v) < 1000 else f"{v:.0f}"
     return f"{text} {spec.unit}".strip().rstrip("-").strip()
+
+
+def swing(row: dict) -> float:
+    cap = an.RPM_SEARCH_MAX
+    lo = row["lo"]["rpm_needed"] if row["lo"]["rpm_needed"] is not None else cap
+    hi = row["hi"]["rpm_needed"] if row["hi"]["rpm_needed"] is not None else cap
+    return abs(hi - lo)
 
 
 def save(fig, name: str) -> str:
@@ -57,35 +72,35 @@ def save(fig, name: str) -> str:
 # --------------------------------------------------------------------------- figures
 def fig_flow_vs_rpm(base: dict) -> str:
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.8), sharey=True)
-    speeds = list(range(0, 1501, 50))
+    speeds = list(range(0, 451, 15))
     for ax, name, values, title, legend_title in (
-            (axes[0], "t_amb_c", (-5, 15, 35), "Weather: outside air temperature (°C)", "outside T °C"),
-            (axes[1], "chimney_height_m", (15, 30, 45), "Chimney height (m)", "chimney m")):
+            (axes[0], "t_amb_c", (10, 25, 40), "Weather: outside air temperature (°C)", "outside T °C"),
+            (axes[1], "chimney_height_m", (20, 38.1, 55), "Chimney height (m)", "chimney m")):
         for v, colour in zip(values, (BLUE, GREEN, ORANGE)):
             p = an.build(base, **{name: v})
             ax.plot(speeds, [an.flow_at(p, s) for s in speeds], color=colour, lw=2, label=f"{v:g}")
         ax.axhline(an.TARGET_FLOW, color=GREY, ls="--", lw=1)
+        ax.axvspan(base["resonance_low_rpm"], base["resonance_high_rpm"], color=RED, alpha=.12)
         ax.set_title(title, fontsize=10)
-        ax.set_xlabel("fan speed (rpm)")
+        ax.set_xlabel("fan speed (rpm); shaded: resonance band")
         ax.legend(title=legend_title, fontsize=8)
         ax.grid(alpha=.3)
     axes[0].set_ylabel("true flow through the plate (m³/s)")
-    axes[0].text(20, an.TARGET_FLOW + 0.05, "setpoint", color=GREY, fontsize=8)
+    axes[0].text(5, an.TARGET_FLOW + 0.05, "setpoint", color=GREY, fontsize=8)
     return save(fig, "flow_vs_rpm.png")
 
 
-def fig_heatmap(base: dict, ambients, gas_temps, grid) -> str:
+def fig_heatmap(ambients, gas_temps, grid) -> str:
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     data = [[math.nan if v is None else v for v in row] for row in grid]
     image = ax.imshow(data, cmap="YlOrRd", aspect="auto", origin="lower")
     ax.set_xticks(range(len(gas_temps)), [f"{g}" for g in gas_temps])
     ax.set_yticks(range(len(ambients)), [f"{a}" for a in ambients])
-    ax.set_xlabel("kiln gas temperature before heat reuse (°C)")
+    ax.set_xlabel("exhaust gas temperature (°C)")
     ax.set_ylabel("outside air temperature (°C)")
     for i, row in enumerate(grid):
         for j, v in enumerate(row):
-            ax.text(j, i, "n/a" if v is None else f"{v:.0f}", ha="center", va="center", fontsize=8,
-                    color="white" if (v or 0) > 800 else "black")
+            ax.text(j, i, "n/a" if v is None else f"{v:.0f}", ha="center", va="center", fontsize=8)
     fig.colorbar(image, label=f"fan rpm needed for {an.TARGET_FLOW} m³/s")
     return save(fig, "rpm_needed_heatmap.png")
 
@@ -94,10 +109,11 @@ def fig_tornado(rows) -> str:
     rows = rows[:12][::-1]
     fig, ax = plt.subplots(figsize=(8.4, 4.6))
     centre = rows[0]["centre"]["rpm_needed"]
+    cap = an.RPM_SEARCH_MAX
     for i, r in enumerate(rows):
         lo, hi = r["lo"]["rpm_needed"], r["hi"]["rpm_needed"]
-        ax.barh(i, (lo or 3000) - centre, color=BLUE, height=.38, label="−10 %" if i == 0 else None)
-        ax.barh(i, (hi or 3000) - centre, color=ORANGE, height=.38, label="+10 %" if i == 0 else None)
+        ax.barh(i, (cap if lo is None else lo) - centre, color=BLUE, height=.38, label="−10 %" if i == 0 else None)
+        ax.barh(i, (cap if hi is None else hi) - centre, color=ORANGE, height=.38, label="+10 %" if i == 0 else None)
     ax.set_yticks(range(len(rows)), [r["label"] for r in rows], fontsize=8)
     ax.axvline(0, color="black", lw=.8)
     ax.set_xlabel(f"change in fan rpm needed for {an.TARGET_FLOW} m³/s (centre {centre:.0f} rpm)")
@@ -106,7 +122,7 @@ def fig_tornado(rows) -> str:
     return save(fig, "tornado_relative.png")
 
 
-def fig_envelope(base: dict, ambients, rows) -> str:
+def fig_envelope(ambients, rows) -> str:
     fig, ax = plt.subplots(figsize=(6.4, 3.8))
     ax.fill_between(ambients, [r["q_min"] for r in rows], [r["q_max"] for r in rows], color=BLUE, alpha=.2,
                     label="flow the loop can hold")
@@ -114,7 +130,7 @@ def fig_envelope(base: dict, ambients, rows) -> str:
     ax.plot(ambients, [r["q_min"] for r in rows], color=BLUE)
     ax.plot(ambients, [r["q_max"] for r in rows], color=BLUE)
     ax.axhline(an.TARGET_FLOW, color=GREY, ls="--", lw=1)
-    ax.text(ambients[0], an.TARGET_FLOW + .05, "setpoint", color=GREY, fontsize=8)
+    ax.text(ambients[0], an.TARGET_FLOW + .04, "setpoint", color=GREY, fontsize=8)
     ax.set_xlabel("outside air temperature (°C)")
     ax.set_ylabel("flow (m³/s)")
     ax.legend(fontsize=8, loc="center right")
@@ -122,45 +138,90 @@ def fig_envelope(base: dict, ambients, rows) -> str:
     return save(fig, "operating_envelope.png")
 
 
-def fig_pressures(base: dict, sweep) -> str:
+def fig_pressures(base: dict) -> str:
     p = an.build(base)
-    fig, ax = plt.subplots(figsize=(6.4, 3.8))
-    speeds = [r["rpm"] for r in sweep]
-    ax.plot(speeds, [r["p1"] for r in sweep], color=BLUE, marker="o", label="P1 (upstream of plate)")
-    ax.plot(speeds, [r["p2"] for r in sweep], color=RED, marker="o", label="P2 (downstream of plate)")
-    ax.axhline(-p.p_range_pa, color=RED, ls="--", lw=1)
-    ax.text(speeds[0], -p.p_range_pa + 12, "transmitter range limit", color=RED, fontsize=8)
-    ax.set_xlabel("fan speed (rpm)")
+    speeds = list(range(0, 451, 10))
+    ops = [solve_steady(p, s, p.t_gas_c, p.t_amb_c) for s in speeds]
+    fig, ax = plt.subplots(figsize=(7.2, 4.0))
+    ax.axhspan(0, p.p_range_pa, color=GREEN, alpha=.08)
+    ax.text(5, p.p_range_pa - 22, f"what the 0–{p.p_range_pa:.0f} Pa transmitters can read", color=GREEN, fontsize=8)
+    ax.plot(speeds, [o.p1_pa for o in ops], color=BLUE, lw=2, label="P1 (before the plate)")
+    ax.plot(speeds, [o.p2_pa for o in ops], color=MAGENTA, lw=2, label="P2 (after the plate)")
+    ax.plot(speeds, [o.p_fan_in_pa for o in ops], color=RED, lw=1.5, ls="--", label="fan inlet")
+    ax.plot(speeds, [o.p_chimney_base_pa for o in ops], color=GREY, lw=1.5, ls="--", label="chimney base")
+    ax.scatter([SITE["rpm"]] * 2, [SITE["p1"], SITE["p2"]], color="black", zorder=5, label="site reading (17-03-2026)")
+    ax.axvspan(base["resonance_low_rpm"], base["resonance_high_rpm"], color=RED, alpha=.12)
+    ax.axhline(0, color="black", lw=.8)
+    ax.set_xlabel("fan speed (rpm); shaded: resonance band")
     ax.set_ylabel("gauge pressure (Pa)")
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(0.0, 0.86))
     ax.grid(alpha=.3)
     return save(fig, "pressures_vs_rpm.png")
 
 
-def fig_loop(base: dict, disturbance) -> str:
+def fig_chimney(base: dict) -> str:
+    p = an.build(base)
+    profile = build_profile(p, solve_steady(p, an.REFERENCE_RPM, p.t_gas_c, p.t_amb_c), p.t_amb_c)
+    z = [s["z_m"] for s in profile["chimney"]]
+    fig, axes = plt.subplots(1, 4, figsize=(11, 4.0), sharey=True)
+    series = (("side_m", "inside side (m)", GREY), ("t_c", "gas temperature (°C)", RED),
+              ("v_m_s", "gas velocity (m/s)", BLUE), ("p_gauge_local_pa", "pressure vs outside air\nat the same height (Pa)", MAGENTA))
+    for ax, (key, title, colour) in zip(axes, series):
+        ax.plot([s[key] for s in profile["chimney"]], z, color=colour, lw=2)
+        ax.set_xlabel(title, fontsize=9)
+        ax.grid(alpha=.3)
+    axes[3].axvline(0, color="black", lw=.8)
+    axes[0].set_ylabel("height above the chimney base (m)")
+    return save(fig, "chimney_profile.png")
+
+
+def fig_legacy(base: dict, back_pressure: list[dict]) -> str:
+    p = an.build(base)
+    speeds = list(range(230, 451, 5))
+    rows = [(s, solve_steady(p, s, p.t_gas_c, p.t_amb_c)) for s in speeds]
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.8))
-    for (kp, ki), colour in zip(((1.5, 0.05), (1.5, 0.2), (1.5, 0.5)), (BLUE, GREEN, ORANGE)):
+    legacy = [an.legacy_flow(o.p1_pa, o.p2_pa, o.t_gas_c) for _, o in rows]
+    axes[0].plot(speeds, legacy, color=MAGENTA, lw=2, label="legacy formula value")
+    axes[0].set_xlabel("fan speed (rpm)")
+    axes[0].set_ylabel("legacy value (old system units)", color=MAGENTA)
+    twin = axes[0].twinx()
+    twin.plot(speeds, [o.q_m3_s for _, o in rows], color=BLUE, lw=2)
+    twin.set_ylabel("true flow (m³/s)", color=BLUE)
+    axes[0].set_title("Fan speed raised: true flow rises all the way", fontsize=10)
+    axes[0].grid(alpha=.3)
+    axes[1].plot([r["p2"] for r in back_pressure], [r["legacy"] for r in back_pressure], color=MAGENTA, lw=2, marker="o")
+    axes[1].set_xlabel(f"P2 level (Pa) at a constant true flow of {an.TARGET_FLOW} m³/s")
+    axes[1].set_ylabel("legacy value")
+    axes[1].set_title("Same flow, different back-pressure", fontsize=10)
+    axes[1].grid(alpha=.3)
+    return save(fig, "legacy_value.png")
+
+
+def fig_loop(base: dict, disturbance, charge) -> str:
+    fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
+    for (kp, ki), colour in zip(((1.5, 0.05), (1.5, 0.2), (0.5, 0.5)), (BLUE, GREEN, ORANGE)):
         records = an.step_records(base, kp, ki)
         axes[0].plot([r["time_s"] - 300 for r in records], [r["flow_true_m3s"] for r in records], color=colour,
                      lw=2, label=f"Kp {kp}, Ki {ki}")
-    axes[0].axhline(5.0, color=GREY, ls="--", lw=1)
-    axes[0].set_xlim(-10, 150)
-    axes[0].set_xlabel("seconds after the setpoint step 4.0 → 5.0 m³/s")
+    axes[0].axhline(STEP_TARGET, color=GREY, ls="--", lw=1)
+    axes[0].set_xlim(-10, 200)
+    axes[0].set_xlabel(f"seconds after the setpoint step {STEP_START} → {STEP_TARGET} m³/s")
     axes[0].set_ylabel("true flow (m³/s)")
     axes[0].legend(fontsize=8)
     axes[0].grid(alpha=.3)
-    recs = disturbance["records"]
-    t = [r["time_s"] - 300 for r in recs]
-    axes[1].plot(t, [r["flow_true_m3s"] for r in recs], color=BLUE, lw=2, label="true flow")
-    axes[1].axhline(an.TARGET_FLOW, color=GREY, ls="--", lw=1)
-    axes[1].set_xlim(-5, 100)
-    axes[1].set_ylim(an.TARGET_FLOW * 0.9, an.TARGET_FLOW * 1.1)      # ±10 % window: shows the true size of the blip
-    axes[1].set_xlabel("seconds after the cold front (25 → 5 °C)")
-    axes[1].set_ylabel("flow (m³/s)", color=BLUE)
-    twin = axes[1].twinx()
-    twin.plot(t, [r["rpm_commanded"] for r in recs], color=ORANGE, lw=2)
-    twin.set_ylabel("commanded fan rpm", color=ORANGE)
-    axes[1].grid(alpha=.3)
+    for ax, records, t0, label in ((axes[1], disturbance["records"], 300.0, "seconds after the cold front (30 → 15 °C)"),
+                                   (axes[2], charge["records"], charge["records"][0]["time_s"], "seconds (fuel charge every 900 s)")):
+        t = [r["time_s"] - t0 for r in records]
+        ax.plot(t, [r["flow_true_m3s"] for r in records], color=BLUE, lw=2)
+        ax.axhline(an.TARGET_FLOW, color=GREY, ls="--", lw=1)
+        ax.set_ylim(an.TARGET_FLOW * 0.9, an.TARGET_FLOW * 1.1)
+        ax.set_xlabel(label)
+        ax.set_ylabel("true flow (m³/s)", color=BLUE)
+        twin = ax.twinx()
+        twin.plot(t, [r["rpm_commanded"] for r in records], color=ORANGE, lw=1.5)
+        twin.set_ylabel("commanded fan rpm", color=ORANGE)
+        ax.grid(alpha=.3)
+    axes[1].set_xlim(-5, 150)
     return save(fig, "loop_responses.png")
 
 
@@ -172,26 +233,38 @@ def build_report() -> str:
     travel = an.tornado(base)
     relative = an.tornado(base, relative=0.10)
     fan_vs_draft = an.fan_effect_vs_draft(base)
-    ambients, gas_temps = (-10, 0, 10, 20, 30, 40), (150, 200, 250, 300, 350, 400)
+    ambients, gas_temps = (10, 20, 30, 40), (90, 110, 130, 160, 200, 250)
     grid = an.rpm_needed_grid(base, ambients, gas_temps)
     envelope = an.envelope_vs_ambient(base, ambients)
-    reuse = an.reuse_interaction(base)
-    betas = an.plate_beta_study(base)
+    taper = an.chimney_taper_study(base)
+    betas = an.plate_beta_study(base, betas=(0.5, 0.6, 0.7, 0.75))
     resolution = an.flow_resolution_vs_flow(base)
     errors = an.estimate_error_table(base)
+    back_pressure = an.legacy_value_vs_back_pressure(base)
+    back_pressure_valid = [r for r in back_pressure if r["legacy"] is not None]
+    readable = an.lowest_readable_speed(base)
     pid_grid = an.pid_tuning_grid(base)
     lags = an.lag_study(base)
     disturbance = an.disturbance_response(base)
+    charge = an.charge_disturbance(base)
     windup = an.windup_recovery(base)
 
     natural = solve_steady(p, 0.0, p.t_gas_c, p.t_amb_c)
+    site = solve_steady(p, SITE["rpm"], SITE["t_gas"], p.t_amb_c)
+    site_profile = build_profile(p, site, p.t_amb_c)
+    calcs = site_profile["calcs"]
+    losses = calcs["budget"]["losses"]
+    site_legacy = an.legacy_flow(SITE["p1"], SITE["p2"], SITE["t_gas"])
     centre = relative[0]["centre"]
     q_min, q_max = an.flow_at(p, p.motor_min_rpm), an.flow_at(p, p.motor_max_rpm)
     at_max = sweep[-1]
+    no_restriction = solve_steady(an.build(base, restriction_free_area_m2=3.0), SITE["rpm"], SITE["t_gas"], p.t_amb_c)
+
     figs = {
-        "flow": fig_flow_vs_rpm(base), "heat": fig_heatmap(base, ambients, gas_temps, grid),
-        "tornado": fig_tornado(relative), "env": fig_envelope(base, ambients, envelope),
-        "press": fig_pressures(base, sweep), "loop": fig_loop(base, disturbance),
+        "flow": fig_flow_vs_rpm(base), "heat": fig_heatmap(ambients, gas_temps, grid),
+        "tornado": fig_tornado(relative), "env": fig_envelope(ambients, envelope),
+        "press": fig_pressures(base), "chimney": fig_chimney(base),
+        "legacy": fig_legacy(base, back_pressure_valid), "loop": fig_loop(base, disturbance, charge),
     }
 
     fan_adds = [r["fan_adds"] for r in fan_vs_draft]
@@ -202,107 +275,235 @@ def build_report() -> str:
     m31 = errors["cd_table"][(0, 31.0)]
     m26 = errors["cd_table"][(0, 26.0)]
     drift = errors["drift"]
-    p2_plus10 = drift["p2_offset"][10]
+    p2_plus5 = drift["p2_offset"][5]
     t_plus30 = drift["t_offset"][30]
-    default_grid = {(r["kp"], r["ki"]): r for r in pid_grid}
-    reuse_by = {(r["extraction"], r["k_reuse"]): r for r in reuse}
+    grid_by = {(r["kp"], r["ki"]): r for r in pid_grid}
     holdable = [r for r in resolution if r["holdable"]]
     lag_by = {(r["param"], r["value"]): r for r in lags}
+    legacy_readable = [r for r in sweep if r["legacy"] is not None]
+    legacy_peak = max(legacy_readable, key=lambda r: r["legacy"])
+    top = site_profile["top"]
+    by_name = {r["name"]: r for r in relative}
 
-    top_relative = relative[:5]
     out = []
     w = out.append
 
     w(f"""# How the parameters affect each other — kiln process simulation report
 
-Generated {date.today().isoformat()} by `python -m sim.report` from the simulation in `sim/` (model of natural draft,
-chimney, orifice plate and fan, with the real `fan-ctrl` PID in a closed loop). Rerun it after changing the model or
-the defaults and the numbers below update.
+Generated {date.today().isoformat()} by `python -m sim.report` from the simulation in `sim/` (natural draft, fan,
+orifice plate and tapered chimney, with the real `fan-ctrl` PID in a closed loop). Rerun it after changing the model
+or the defaults and the numbers below update.
 
-> **Read this first.** Every parameter value is a **placeholder** ("generally meaningful"), not site data. Trust the
-> **directions, the relative sizes and the interactions**; do not quote the absolute numbers (flows, pressures, rpm) as
-> predictions for the real kiln. §8 lists what the model leaves out.
+> **Read this first.** Parameter values are **placeholders**, except the chimney dimensions given by the owner
+> (125 ft tall, 5 ft square at the base, 3 ft square at the top) and the values tuned to one site reading (§3).
+> Trust the **directions, the relative sizes and the interactions**. Do not quote flows, pressures or rpm as
+> predictions for the real kiln. §9 lists what the model leaves out.
 
 ## 1. The system being modelled
 
-The heat reuse happens **inside the kiln's own tunnels, before the plate** (owner correction, 2026-11-14), so the plate
-and the fan see gas that has already been cooled:
+The orifice plate sits **between the fan and the chimney** (owner, 2026-11-16). Heat reuse inside the kiln is not
+modelled.
 
 ```
- kiln firing zone ─► heat-reuse tunnels ─► duct ─► ORIFICE PLATE ─► fan ─► chimney ─► outside air
- (T_kiln)            (gas cooled, loss       (loss)   P1 | P2, T        (adds     (buoyancy =
-                      shows up in P1)                                    pressure)  natural draft)
+ kiln and flues ──► FAN ──► short duct ──► ORIFICE PLATE ──► restriction ──► chimney ──► outside air
+ (resistance, as              (adds          P1 | P2, T        (loss seen     (buoyancy =      (pressure falls
+  a free area)                 pressure)                        on site)       natural draft)    with height)
 ```
 
-Default operating point (all sliders at their defaults): kiln gas {p.t_gas_c:.0f} °C leaving the firing zone, {p.t_amb_c:.0f} °C outside,
-{p.reuse_extraction * 100:.0f} % of the heat taken out by the tunnels so the plate sees {natural.t_plate_c:.0f} °C.
-**Natural draft alone moves {natural.q_m3_s:.2f} m³/s** ({natural.draft_pa:.0f} Pa of draft). The fan, between its minimum
-({p.motor_min_rpm:.0f} rpm) and maximum ({p.motor_max_rpm:.0f} rpm) speed, lets the loop hold anything from
+Default operating point: exhaust gas {p.t_gas_c:.0f} °C, {p.t_amb_c:.0f} °C outside.
+**Natural draft alone moves {natural.q_m3_s:.2f} m³/s** ({natural.draft_pa:.0f} Pa of draft). Between its minimum
+({p.motor_min_rpm:.0f} rpm) and maximum ({p.motor_max_rpm:.0f} rpm) speed the fan lets the loop hold
 **{q_min:.2f} to {q_max:.2f} m³/s**. The default setpoint of {an.TARGET_FLOW} m³/s needs about **{centre['rpm_needed']:.0f} rpm**.
 
 ## 2. How the pieces connect
 
-```
- outside T ─────────────────────────────┐
- kiln T ─► reuse extraction ─► T at plate ─► chimney mean T ─► DRAFT ──────┐
- chimney height / diameter / wall loss ──┘        ▲                       │
-                                                  │ (more flow = less      ▼
- gas molar mass ─► gas density ─────────────► cooling in chimney)   TOTAL PUSH = draft + fan gain ──► FLOW
-                                                                          ▲                          │
- fan rpm ─► fan gain (∝ rpm², fan curve) ────────────────────────────────┘                          ▼
-                                                                                           plate ΔP ∝ flow²
- resistances: reuse tunnels, duct, plate (permanent loss), chimney, idle fan ─► divide the push           │
-                                                                                         P1, P2 ─► counts ─► controller's flow estimate
- plate Cd / assumed Cd, assumed gas molar mass ───────────────────────────────────────────────────────────► (can be wrong) ─► PID ─► rpm
-```
+The model finds the flow from one pressure balance: **flow = √(total push ÷ total resistance)**.
 
-The model finds the flow from one pressure balance: **flow = √(total push ÷ total resistance)**. Four consequences
-explain almost everything below:
+* Push: kiln gauge pressure + natural draft + fan.
+* Resistance: kiln and flues, fan-to-plate duct, plate (permanent loss), restriction, chimney friction, chimney exit.
 
-1. **The fan and the draft add as pressures, but flow goes as a square root.** The more draft there already is, the less
-   extra flow the same fan speed buys (§5.1).
-2. **Resistance goes as 1/diameter⁴**, so the duct diameter and the plate bore dominate (§4).
-3. **The plate signal is ΔP ∝ flow²**, so the instrument sees less at low flow and the resolution gets coarse (§5.5).
-4. **The controller never sees the true flow**, only an estimate built from P1, P2, T and *assumed* Cd and gas molar mass.
-   Whatever those assumptions get wrong becomes a true-flow error (§5.6).
+Consequences that explain most of what follows:
 
-| Parameter group | Changes the draft | Changes the resistance | Changes the fan's push | Changes what the controller sees | Changes timing |
-|---|---|---|---|---|---|
-| Weather (outside T, pressure) | ✔ (density difference) | – | – | – | – |
-| Kiln gas T, reuse extraction | ✔ (gas lightness) | – | – | ✔ (T at the plate) | slow thermal lag |
-| Gas molar mass, specific heat | ✔ | – | ✔ (density) | ✔ (density in the flow equation) | – |
-| Reuse tunnel loss, duct, plate β | – | ✔ | – | ✔ (P1/P2 levels, ΔP signal) | – |
-| Chimney height/diameter/friction/wall loss | ✔ | ✔ | – | – | – |
-| Fan curve (shut-off ΔP, free-delivery flow, rated rpm) | – | ✔ (idle fan) | ✔ | – | – |
-| Transmitter range, noise, lag, drift | – | – | – | ✔ | ✔ |
-| PID gains, scan, ranges, anti-windup | – | – | ✔ (what rpm is asked for) | – | ✔ |
+1. **The fan and the draft add as pressures, but flow goes as a square root.** The more draft there already is, the
+   less extra flow the same fan speed buys (§6.1).
+2. **The plate is on the fan's discharge side.** P1 and P2 are negative when draft dominates and positive when the
+   fan pushes. The site transmitters read 0–{p.p_range_pa:.0f} Pa only, so they are blind at low fan speed (§4).
+3. **The plate signal is ΔP ∝ flow²**, so the resolution gets coarse at low flow (§6.5).
+4. **The controller never sees the true flow**, only a value built from P1, P2 and T (§5, §6.6).
 
-## 3. Baseline: what the fan does across its range
+## 3. Check against the one real operating point
 
-{table(["fan rpm", "flow m³/s", "draft Pa", "fan adds Pa", "plate ΔP Pa", "P1 Pa", "P2 Pa", "P2 vs ±range"],
-       [[f"{r['rpm']:.0f}", f"{r['q']:.2f}", f"{r['draft']:.0f}", f"{r['fan_dp']:.0f}", f"{r['plate_dp']:.0f}",
-         f"{r['p1']:.0f}", f"{r['p2']:.0f}", f"{r['p2_range_use'] * 100:.0f} %"] for r in sweep])}
+LabVIEW screen, 17-03-2026: P1 {SITE['p1']} Pa, P2 {SITE['p2']} Pa, exhaust {SITE['t_gas']} °C, fan {SITE['rpm']:.0f} rpm.
+
+{table(["", "site", "model at the same speed and temperature"],
+       [["P1 (Pa)", SITE['p1'], f"{site.p1_pa:.1f}"], ["P2 (Pa)", SITE['p2'], f"{site.p2_pa:.1f}"],
+        ["Plate ΔP (Pa)", f"{SITE['p1'] - SITE['p2']:.1f}", f"{site.plate_dp_pa:.1f}"],
+        ["True flow (m³/s)", "not known", f"{site.q_m3_s:.2f}"]])}
+
+The match was obtained by choosing four placeholder values, so it is a **fit, not a confirmation**: duct and plate
+size (to give the measured ΔP at a believable flow), fan curve (about {site.fan_dp_pa:.0f} Pa at 380 rpm, as the
+VelKilnMaster cold-start model assumes), kiln free area, and one more that needs explaining.
+
+**The restriction.** A {p.chimney_height_m:.1f} m chimney at {SITE['t_gas']} °C gives about {site.draft_pa:.0f} Pa of
+draft. With only the chimney after the plate, P2 would be **{no_restriction.p2_pa:.0f} Pa** (suction). The site shows
+**+{SITE['p2']:.0f} Pa**. About {losses['restriction_pa']:.0f} Pa is being lost between the plate and the chimney top,
+while the chimney as given accounts for {losses['chimney_friction_pa'] + losses['exit_pa']:.0f} Pa (friction
+{losses['chimney_friction_pa']:.1f}, exit {losses['exit_pa']:.1f}). The model carries this as an equivalent opening
+of {p.restriction_free_area_m2} m² (`restriction_free_area_m2`). Possible causes, to be checked on site:
+
+1. 3 ft and 5 ft are **outside** dimensions. An inside top of about {math.sqrt(p.restriction_free_area_m2) * FT_PER_M:.1f} ft
+   square would lose this much on its own.
+2. A damper, bend, long flue or soot between the plate and the chimney.
+3. Strong cooling in the chimney, so the real draft is well below {site.draft_pa:.0f} Pa.
+4. P2 is tapped somewhere other than just after the plate.
+
+Where the push goes at this point:
+
+{table(["pushing", "Pa", "resisting", "Pa"],
+       [["natural draft", f"{site.draft_pa:.0f}", "kiln and flues", f"{losses['kiln_pa']:.0f}"],
+        ["fan", f"{site.fan_dp_pa:.0f}", "fan-to-plate duct", f"{losses['fan_to_plate_pa']:.1f}"],
+        ["", "", "plate (permanent loss)", f"{losses['plate_pa']:.1f}"],
+        ["", "", "restriction", f"{losses['restriction_pa']:.0f}"],
+        ["", "", "chimney friction + exit", f"{losses['chimney_friction_pa'] + losses['exit_pa']:.1f}"]])}
+
+Other figures at this point: {calcs['mass_flow_t_h']:.1f} t/h of gas; {calcs['velocity']['duct_m_s']:.1f} m/s in the duct,
+{calcs['velocity']['plate_bore_m_s']:.1f} m/s through the plate bore, {calcs['velocity']['chimney_exit_m_s']:.1f} m/s at the chimney exit;
+fan air power {calcs['fan_air_power_w'] / 1000:.2f} kW (about {calcs['fan_shaft_power_w'] / 1000:.1f} kW at the shaft with the placeholder
+efficiency); the gas carries {calcs['heat_carried_w'] / 1000:.0f} kW above ambient and loses {calcs['heat_lost_chimney_w'] / 1000:.0f} kW
+through the chimney wall, leaving at {top['t_c']:.0f} °C. Natural draft supplies {calcs['draft_share'] * 100:.0f} % of the push.
+
+{figs['chimney']}
+
+Outside air pressure at the chimney top is {site_profile['ground']['p_abs_pa'] - top['outside']['p_abs_pa']:.0f} Pa below ground level
+({top['outside']['rho']:.3f} against {site_profile['ground']['rho']:.3f} kg/m³). The draft exists because the hot gas inside
+({top['rho']:.3f} kg/m³ at the top) is lighter still.
+
+## 4. What the fan does across its range, and what the transmitters can see
+
+{table(["fan rpm", "flow m³/s", "draft Pa", "fan adds Pa", "fan inlet Pa", "P1 Pa", "P2 Pa", "plate ΔP Pa", "readable?", "legacy value"],
+       [[f"{r['rpm']:.0f}", f"{r['q']:.2f}", f"{r['draft']:.0f}", f"{r['fan_dp']:.0f}", f"{r['p_fan_in']:.0f}", f"{r['p1']:.0f}",
+         f"{r['p2']:.0f}", f"{r['plate_dp']:.1f}", "yes" if r['readable'] else "**no**", num(r['legacy'])] for r in sweep])}
 
 {figs['press']}
 
-* Flow rises from {sweep[0]['q']:.2f} to {sweep[-1]['q']:.2f} m³/s over the fan's range, but **not in proportion to rpm** —
-  the draft is a fixed head start (it barely moves: {sweep[0]['draft']:.0f} → {sweep[-1]['draft']:.0f} Pa, only because the faster gas
-  cools less in the chimney).
-* A stopped fan is a small restriction ({sweep[0]['fan_dp']:.0f} Pa), not a blockage, so natural draft still flows.
-* **At {at_max['rpm']:.0f} rpm the downstream pressure P2 is {at_max['p2']:.0f} Pa, {at_max['p2_range_use'] * 100:.0f} % of the placeholder
-  ±{p.p_range_pa:.0f} Pa transmitter range**: the P2 transmitter would saturate at the fan's top speed. The transmitter range,
-  the plate β and the fan size have to be chosen together (§5.5).
+* A stopped fan is a small restriction ({sweep[0]['fan_dp']:.0f} Pa), not a blockage: natural draft still moves {sweep[0]['q']:.2f} m³/s.
+* **Below about {readable['rpm']:.0f} rpm ({readable['q']:.2f} m³/s) P2 is under suction and a 0–{p.p_range_pa:.0f} Pa transmitter cannot
+  read it.** Neither the controller's flow nor the legacy value exists there. In the closed loop, a setpoint in that region
+  makes the controller under-read the flow and the fan hunts (covered by a test).
+* The placeholder minimum speed ({p.motor_min_rpm:.0f} rpm) is **inside** that unreadable region. The minimum speed, the
+  transmitter range and the resonance band ({p.resonance_low_rpm:.0f}–{p.resonance_high_rpm:.0f} rpm) have to be chosen together.
+* At {at_max['rpm']:.0f} rpm P1 is {at_max['p1']:.0f} Pa, {at_max['p1_range_use'] * 100:.0f} % of the transmitter range.
 
 {figs['flow']}
 
-## 4. Which parameters matter most
+## 5. The legacy formula value
 
-Two views, because "which matters" depends on how you compare. The **relative** view moves each parameter by ±10 % of its
-*own value* (physics only); the **slider-travel** view moves each slider by ±10 % of its *range* (what you feel when
-dragging in the GUI). Output shown: the fan speed needed to hold {an.TARGET_FLOW} m³/s (centre: {centre['rpm_needed']:.0f} rpm), plus the
-natural-draft-only flow and the flow at a fixed {an.REFERENCE_RPM:.0f} rpm.
+`calc_pv` is called unchanged, with the default constants from `fan-ctrl/config.py`, the gauge pressures and the
+temperature in kelvin. At the site reading it gives **{site_legacy:.1f}**; the old screen showed an averaged {SITE['screen_value']}.
+(With `a2 = 0.6096` in place of `0.6096²` it gives {site_legacy / 0.6096:.1f}. Which constant the old system used is still open.)
 
-**±10 % of each parameter's own value**
+The formula uses the **ratio P2/P1 of two gauge pressures**, so it depends on the pressure level at the plate and not only
+on the differential:
+
+{table(["restriction free area m²", "fan rpm", "true flow m³/s", "plate ΔP Pa", "P1 Pa", "P2 Pa", "legacy value"],
+       [[r['area'], f"{r['rpm']:.0f}", f"{r['q']:.2f}", f"{r['plate_dp']:.1f}", f"{r['p1']:.0f}", f"{r['p2']:.0f}", num(r['legacy'])]
+        for r in back_pressure])}
+
+{figs['legacy']}
+
+* **Same flow, different back-pressure, different value** ({num(back_pressure_valid[0]['legacy'])} to {num(back_pressure_valid[-1]['legacy'])} above; "–" means P2 fell below 0 Pa and
+  the formula has no answer).
+  Soot build-up or a damper after the plate would move the legacy value with no change in flow.
+* **In this model the legacy value is not a steady function of flow.** It peaks at {legacy_peak['legacy']:.1f} near
+  {legacy_peak['rpm']:.0f} rpm and then **falls** as the fan speeds up, because P2/P1 rises towards 1 when the back-pressure
+  grows faster than the differential. A PID on a value that falls when flow rises would drive the wrong way.
+* The real system was controlled with this value for years, so one of these must be true: the real back-pressure does not
+  grow like the modelled restriction; or the old system fed the formula something other than plain gauge pressures; or the
+  plant only ever ran on the rising side. **A speed step test on site (rpm against P1 and P2, five or six speeds) would
+  settle this and the restriction question in §3 together.** Until then the simulation shows the legacy value and does
+  not control with it.
+
+## 6. How parameters interact
+
+### 6.1 The fan matters less when the draft is strong
+
+Same fan move (0 → {an.REFERENCE_RPM:.0f} rpm) in different weather and chimney heights:
+
+{table(["outside T °C", "chimney m", "draft Pa", "flow, fan stopped m³/s", f"flow at {an.REFERENCE_RPM:.0f} rpm m³/s", "fan adds m³/s"],
+       [[r['t_amb'], r['height'], f"{r['draft']:.0f}", f"{r['q_natural']:.2f}", f"{r['q_with_fan']:.2f}", f"{r['fan_adds']:.2f}"] for r in fan_vs_draft])}
+
+The fan adds **{min(fan_adds):.2f}–{max(fan_adds):.2f} m³/s** depending on the draft already there: {weakest['fan_adds']:.2f} m³/s at the
+weakest draft ({weakest['draft']:.0f} Pa) and {strongest['fan_adds']:.2f} m³/s at the strongest ({strongest['draft']:.0f} Pa). The fan's
+effect on flow, and so the loop gain, changes with weather and exhaust temperature.
+
+### 6.2 Weather × exhaust temperature decide how hard the fan works
+
+Fan rpm needed to hold {an.TARGET_FLOW} m³/s:
+
+{table(["outside T °C ↓ / exhaust gas °C →"] + [str(g) for g in gas_temps],
+       [[str(a)] + ["n/a" if v is None else f"{v:.0f}" for v in row] for a, row in zip(ambients, grid)])}
+
+{figs['heat']}
+
+The required speed runs from {min(grid_values):.0f} rpm (cool air, hot gas) to {max(grid_values):.0f} rpm (hot air, cool gas).
+
+### 6.3 There is a minimum flow the loop cannot go below
+
+The fan can add flow but cannot brake it:
+
+{table(["outside T °C", "natural draft alone m³/s", f"lowest holdable (fan at {p.motor_min_rpm:.0f} rpm) m³/s", f"highest holdable (fan at {p.motor_max_rpm:.0f} rpm) m³/s"],
+       [[r['t_amb'], f"{r['q_natural']:.2f}", f"{r['q_min']:.2f}", f"{r['q_max']:.2f}"] for r in envelope])}
+
+{figs['env']}
+
+A setpoint below the "lowest holdable" line cannot be reached with the fan alone; holding lower flows would need a damper.
+
+### 6.4 Chimney taper
+
+{table(["top inside side m", "ft", "exit loss Pa", "friction Pa", f"flow at {an.REFERENCE_RPM:.0f} rpm m³/s", "P2 Pa", f"rpm for {an.TARGET_FLOW}"],
+       [[r['top_side'], f"{r['top_side'] * FT_PER_M:.1f}", f"{r['loss_exit']:.1f}", f"{r['loss_friction']:.1f}", f"{r['q_fixed_rpm']:.2f}",
+         f"{r['p2']:.0f}", rpm(r['rpm_needed'])] for r in taper])}
+
+The exit loss goes as 1/side⁴. At 3 ft the top costs {taper[2]['loss_exit']:.0f} Pa; at {taper[0]['top_side'] * FT_PER_M:.1f} ft it would cost
+{taper[0]['loss_exit']:.0f} Pa and raise P2 to {taper[0]['p2']:.0f} Pa. This is why the inside dimension of the top matters (§3, cause 1).
+
+### 6.5 Plate bore, transmitter range and flow resolution
+
+{table(["plate β", f"rpm for {an.TARGET_FLOW}", "plate ΔP Pa", "P1 Pa", "P1 vs range", "ΔP in PLC counts (full scale 6000)", "flow resolution % per count"],
+       [[f"{r['beta']:.2f}", rpm(r['rpm_needed']) + (" (> motor max)" if (r['rpm_needed'] or 0) > p.motor_max_rpm else ""),
+         f"{r['plate_dp']:.0f}", f"{r['p1']:.0f}", f"{r['p1_range_use'] * 100:.0f} %",
+         f"{r['dp_counts']:.0f}", f"{r['pct_per_count']:.3f}"] for r in betas])}
+
+A smaller bore gives a stronger signal but costs fan speed and pushes P1 towards the top of the transmitter range.
+
+{table(["flow m³/s", "plate ΔP Pa", "ΔP counts", "flow resolution % per count", "can the loop hold it?"],
+       [[f"{r['q']:.1f}", f"{r['plate_dp']:.1f}", f"{r['dp_counts']:.0f}", f"{r['pct_per_count']:.3f}", "yes" if r['holdable'] else "no (outside the envelope)"] for r in resolution])}
+
+Across the flows the loop can hold, one count is a {holdable[0]['pct_per_count'] / holdable[-1]['pct_per_count']:.1f}× bigger slice of the flow at
+{holdable[0]['q']} m³/s than at {holdable[-1]['q']} m³/s. The ΔP is only about {centre['plate_dp_fixed']:.0f} Pa of a {p.p_range_pa:.0f} Pa range, read as the
+difference of two transmitters, so each count is about {100.0 / (2 * centre['plate_dp_fixed'] / p.p_range_pa * 6000):.2f} % of flow.
+
+### 6.6 What measurement errors do to the TRUE flow
+
+The controller adjusts the fan until *its estimate* equals the setpoint ({an.TARGET_FLOW} m³/s). True flow in that case:
+
+{table(["assumed Cd error ↓ / assumed gas molar mass →"] + [f"{m} g/mol" for m in errors['molar_masses']],
+       [[f"{cd:+d} %"] + [f"{errors['cd_table'][(cd, m)]:.2f}" for m in errors['molar_masses']] for cd in errors['cd_errors']])}
+
+* The true gas is {p.gas_molar_mass_g_mol} g/mol. Assuming 31 gives **{(m31 / an.TARGET_FLOW - 1) * 100:+.1f} %**, assuming 26 gives
+  **{(m26 / an.TARGET_FLOW - 1) * 100:+.1f} %**; believing the plate Cd is 5 % higher than it is gives **{(cd5 / an.TARGET_FLOW - 1) * 100:+.1f} %**.
+  The controller reports "on setpoint" in every case.
+
+{table(["drift", "P1 reads high by (Pa)", "P2 reads high by (Pa)"],
+       [[f"{off:+d}", f"{drift['p1_offset'][off]:.2f}", f"{drift['p2_offset'][off]:.2f}"] for off in (-10, -5, 5, 10)])}
+
+* **A small drift is a large flow error**, because the ΔP is small: P2 reading 5 Pa high gives {p2_plus5:.2f} m³/s
+  ({(p2_plus5 / an.TARGET_FLOW - 1) * 100:+.1f} %). The same drift on P1 gives the opposite error; equal drift on both cancels.
+* Temperature drift matters least: +30 K gives {(t_plus30 / an.TARGET_FLOW - 1) * 100:+.1f} %.
+
+## 7. Which parameters matter most
+
+Each parameter moved by ±10 % of its own value; output: fan speed needed for {an.TARGET_FLOW} m³/s (centre {centre['rpm_needed']:.0f} rpm).
 
 {table(["Parameter", "−10 % → +10 %", "natural flow m³/s", f"flow at {an.REFERENCE_RPM:.0f} rpm m³/s", f"rpm for {an.TARGET_FLOW}"],
        [[r['label'], f"{value(r['name'], r['lo_value'])} → {value(r['name'], r['hi_value'])}",
@@ -312,194 +513,74 @@ natural-draft-only flow and the flow at a fixed {an.REFERENCE_RPM:.0f} rpm.
 
 {figs['tornado']}
 
-**±10 % of each slider's travel** (depends on the slider ranges, which are my choice)
+* **The fan curve leads** ({relative[0]['label']}: {swing(relative[0]):.0f} rpm of swing). The real fan curve or nameplate is the
+  most valuable missing fact.
+* **Gas molar mass** moves the answer by {swing(by_name['gas_molar_mass_g_mol']):.0f} rpm and nobody controls it (wood moisture, firing stage).
+* **The two unknown resistances** follow: restriction after the plate ({swing(by_name['restriction_free_area_m2']):.0f} rpm) and kiln free
+  area ({swing(by_name['kiln_free_area_m2']):.0f} rpm). The kiln free area changes all day as dampers move.
+* Exhaust temperature ±10 % moves it {swing(by_name['t_gas_c']):.0f} rpm; chimney height {swing(by_name['chimney_height_m']):.0f} rpm.
+* The chimney's own size barely matters while the restriction dominates: top side {swing(by_name['chimney_top_side_m']):.0f} rpm.
 
-{table(["Parameter", "moved to", "natural flow m³/s", f"flow at {an.REFERENCE_RPM:.0f} rpm m³/s", f"rpm for {an.TARGET_FLOW}"],
+The same sweep by ±10 % of each slider's travel (depends on the slider ranges chosen for the GUI):
+
+{table(["Parameter", "moved to", f"rpm for {an.TARGET_FLOW}"],
        [[r['label'], f"{value(r['name'], r['lo_value'])} → {value(r['name'], r['hi_value'])}",
-         f"{r['lo']['q_natural']:.2f} → {r['hi']['q_natural']:.2f}",
-         f"{r['lo']['q_fixed_rpm']:.2f} → {r['hi']['q_fixed_rpm']:.2f}",
-         f"{rpm(r['lo']['rpm_needed'])} → {rpm(r['hi']['rpm_needed'])}"] for r in travel])}
+         f"{rpm(r['lo']['rpm_needed'])} → {rpm(r['hi']['rpm_needed'])}"] for r in travel[:10]])}
 
-What stands out (relative view):
+## 8. How the control loop behaves
 
-* **Geometry dominates.** {top_relative[0]['label']} and {top_relative[1]['label']} are the top two: a 10 % change moves the rpm
-  needed by roughly {abs(top_relative[0]['hi']['rpm_needed'] - top_relative[0]['lo']['rpm_needed']):.0f} rpm. That is the 1/diameter⁴ effect.
-  They are fixed by the installation, but they are also the parameters you can check on site with a tape measure.
-* **Gas molar mass is the biggest thing nobody controls.** It moves the rpm needed by
-  {abs(next(r for r in relative if r['name'] == 'gas_molar_mass_g_mol')['hi']['rpm_needed'] - next(r for r in relative if r['name'] == 'gas_molar_mass_g_mol')['lo']['rpm_needed']):.0f} rpm for ±10 % (wood moisture and
-  firing stage change the flue-gas composition), through both the draft (density) and the controller's estimate.
-* **Temperatures matter less than intuition says:** ±10 % of kiln temperature (±{p.t_gas_c * .1:.0f} K) and ±10 % of ambient (±{p.t_amb_c * .1:.1f} K)
-  move the rpm needed by {abs(next(r for r in relative if r['name'] == 't_gas_c')['hi']['rpm_needed'] - next(r for r in relative if r['name'] == 't_gas_c')['lo']['rpm_needed']):.0f}
-  and {abs(next(r for r in relative if r['name'] == 't_amb_c')['hi']['rpm_needed'] - next(r for r in relative if r['name'] == 't_amb_c')['lo']['rpm_needed']):.0f} rpm. Weather is a small disturbance here (but see §5.2 for big swings).
-* **Almost no effect:** atmospheric pressure, kiln gauge pressure, gas specific heat and chimney friction/wall loss
-  (within ±10 %). Atmospheric pressure and kiln gauge pressure only shift P1/P2 levels; the flow does not change.
-
-## 5. How parameters interact
-
-### 5.1 The fan matters less when the draft is strong
-
-Same fan move (0 → {an.REFERENCE_RPM:.0f} rpm) in different weather and chimney heights:
-
-{table(["outside T °C", "chimney m", "draft Pa", "flow, fan stopped m³/s", f"flow at {an.REFERENCE_RPM:.0f} rpm m³/s", "fan adds m³/s"],
-       [[r['t_amb'], r['height'], f"{r['draft']:.0f}", f"{r['q_natural']:.2f}", f"{r['q_with_fan']:.2f}", f"{r['fan_adds']:.2f}"] for r in fan_vs_draft])}
-
-The fan adds **{min(fan_adds):.2f}–{max(fan_adds):.2f} m³/s** depending on the draft already there: {weakest['fan_adds']:.2f} m³/s at the weakest draft
-({weakest['draft']:.0f} Pa) but only {strongest['fan_adds']:.2f} m³/s at the strongest ({strongest['draft']:.0f} Pa). Reason: flow ∝ √(draft + fan push), so each extra pascal of
-fan push buys less flow when the total is already large. **The loop gain of the fan therefore changes with the weather and
-the kiln temperature** — a fixed tuning is a compromise (it does cope here, §6).
-
-### 5.2 Weather × kiln temperature decide how hard the fan works
-
-Fan rpm needed to hold {an.TARGET_FLOW} m³/s:
-
-{table(["outside T °C ↓ / kiln gas °C →"] + [str(g) for g in gas_temps],
-       [[str(a)] + ["n/a" if v is None else f"{v:.0f}" for v in row] for a, row in zip(ambients, grid)])}
-
-{figs['heat']}
-
-The required speed runs from {min(grid_values):.0f} rpm (cold air, hot kiln) to {max(grid_values):.0f} rpm (warm air, cool kiln). In the
-corner with cold air and a very hot kiln the draft alone exceeds the setpoint and the fan can stop (0 rpm); if `motor_min_rpm` > 0 the fan
-would run anyway and the flow would sit above the setpoint. Kiln temperature moves the answer more than weather does across these ranges
-(a 250 K kiln swing against a 50 K weather swing), but both matter.
-
-### 5.3 There is a minimum flow the loop cannot go below
-
-The fan can add flow but cannot brake it. The lowest flow the loop can hold is what natural draft gives at the fan's
-minimum speed, and it rises in cold weather:
-
-{table(["outside T °C", "natural draft alone m³/s", f"lowest holdable (fan at {p.motor_min_rpm:.0f} rpm) m³/s", f"highest holdable (fan at {p.motor_max_rpm:.0f} rpm) m³/s"],
-       [[r['t_amb'], f"{r['q_natural']:.2f}", f"{r['q_min']:.2f}", f"{r['q_max']:.2f}"] for r in envelope])}
-
-{figs['env']}
-
-A setpoint below the "lowest holdable" line is simply unreachable with the fan alone: the PID pins the fan at minimum and the
-flow stays above the setpoint (you can see this in the GUI by raising chimney height and lowering outside temperature). Holding lower flows would need a
-damper. The envelope also tells you which setpoints are realistic in each season.
-
-### 5.4 Heat reuse (inside the kiln) interacts with the draft, the pressures and the measurement
-
-Two separate effects of the reuse tunnels, plotted as extraction (how much heat is taken) × tunnel loss (how much they resist):
-
-{table(["heat extracted", "tunnel loss K", "T at plate °C", "natural flow m³/s", f"flow at {an.REFERENCE_RPM:.0f} rpm", "P1 Pa", "plate ΔP Pa", f"rpm for {an.TARGET_FLOW}"],
-       [[f"{r['extraction'] * 100:.0f} %", r['k_reuse'], f"{r['t_plate']:.0f}", f"{r['q_natural']:.2f}", f"{r['q_fixed_rpm']:.2f}",
-         f"{r['p1']:.0f}", f"{r['plate_dp']:.0f}", rpm(r['rpm_needed'])] for r in reuse])}
-
-* **Extraction cools the gas** → the buoyancy advantage over the outside air shrinks → less draft. {int(reuse_by[(0.0, 3)]['extraction'] * 100)} % → {int(reuse_by[(0.4, 3)]['extraction'] * 100)} % extraction (tunnel loss 3) moves the natural flow
-  {reuse_by[(0.0, 3)]['q_natural']:.2f} → {reuse_by[(0.4, 3)]['q_natural']:.2f} m³/s and the rpm needed {rpm(reuse_by[(0.0, 3)]['rpm_needed'])} → {rpm(reuse_by[(0.4, 3)]['rpm_needed'])}.
-* **Tunnel loss is pure resistance** → less flow for the same push, and because it sits *before* the plate it deepens the suction at
-  **P1 and P2 together** ({reuse_by[(0.2, 0)]['p1']:.0f} → {reuse_by[(0.2, 9)]['p1']:.0f} Pa at P1) while the plate ΔP only changes through the lower flow.
-* The two **compound**: the worst corner (40 % extraction, loss 9) needs {rpm(reuse_by[(0.4, 9)]['rpm_needed'])} rpm against {rpm(reuse_by[(0.0, 0)]['rpm_needed'])} rpm for no reuse.
-* Practical consequence: **anything that changes the reuse (a damper, a different stage in use, fouling of the tunnels) changes
-  the flow and the P1/P2 levels at the same fan speed, even though nothing changed at the plate.** The PID has to absorb it, and a
-  sudden P1/P2 shift with no change in ΔP is a clue that the cause is upstream.
-
-### 5.5 Plate bore, transmitter range and flow resolution
-
-A smaller bore (lower β) gives a stronger plate signal but costs fan work and pushes the pressures out of the transmitter range:
-
-{table(["plate β", f"rpm for {an.TARGET_FLOW}", "plate ΔP Pa", "P2 Pa", "P2 vs ±range", "ΔP expressed in PLC counts (full scale 6000)", "flow resolution % per count"],
-       [[f"{r['beta']:.2f}", rpm(r['rpm_needed']) + (" (> motor max)" if (r['rpm_needed'] or 0) > p.motor_max_rpm else ""),
-         f"{r['plate_dp']:.0f}", f"{r['p2']:.0f}", f"{r['p2_range_use'] * 100:.0f} %",
-         f"{r['dp_counts']:.0f}", f"{r['pct_per_count']:.3f}"] for r in betas])}
-
-* β is a three-way trade: **signal strength** (resolution per count), **fan work** (rpm needed), and **transmitter headroom**
-  (P2 versus the range). At β = {betas[0]['beta']:.1f} the signal is huge but the fan cannot reach the setpoint and P2 is {betas[0]['p2_range_use'] * 100:.0f} % of the range; at
-  β = {betas[-1]['beta']:.1f} the fan hardly works but each PLC count is {betas[-1]['pct_per_count'] / betas[2]['pct_per_count']:.1f}× coarser than at β = {betas[2]['beta']:.1f}.
-
-The square-root law also makes the resolution depend on the flow itself (default plate and range):
-
-{table(["flow m³/s", "plate ΔP Pa", "ΔP counts", "flow resolution % per count", "can the loop hold it?"],
-       [[f"{r['q']:.1f}", f"{r['plate_dp']:.0f}", f"{r['dp_counts']:.0f}", f"{r['pct_per_count']:.3f}", "yes" if r['holdable'] else "no (outside the envelope)"] for r in resolution])}
-
-Across the flows the loop can actually hold, one count is a {holdable[0]['pct_per_count'] / holdable[-1]['pct_per_count']:.1f}× bigger slice of the flow at {holdable[0]['q']} m³/s than at
-{holdable[-1]['q']} m³/s ({holdable[0]['pct_per_count']:.3f} % against {holdable[-1]['pct_per_count']:.3f} % per count). With the placeholder range that is fine; on the real transmitters a range
-chosen for the top of the fan's range may leave too little resolution at the low end.
-
-### 5.6 What measurement errors do to the TRUE flow
-
-The controller adjusts the fan until *its estimate* equals the setpoint ({an.TARGET_FLOW} m³/s). If the estimate is wrong the true flow ends up elsewhere.
-
-True flow when the controller thinks it holds {an.TARGET_FLOW} m³/s:
-
-{table(["assumed Cd error ↓ / assumed gas molar mass →"] + [f"{m} g/mol" for m in errors['molar_masses']],
-       [[f"{cd:+d} %"] + [f"{errors['cd_table'][(cd, m)]:.2f}" for m in errors['molar_masses']] for cd in errors['cd_errors']])}
-
-* The true gas is {p.gas_molar_mass_g_mol} g/mol. Assuming it is heavier than it is (31) makes the true flow **{(m31 / an.TARGET_FLOW - 1) * 100:+.1f} %**; lighter (26) gives
-  **{(m26 / an.TARGET_FLOW - 1) * 100:+.1f} %**. Believing the plate Cd is 5 % higher than it is gives **{(cd5 / an.TARGET_FLOW - 1) * 100:+.1f} %**. These errors are *invisible to the controller*:
-  it always reports "on setpoint".
-
-Transmitter drift (offset added to one reading), true flow when the controller holds {an.TARGET_FLOW}:
-
-{table(["drift (Pa or °C)", "P1 reads high by", "P2 reads high by", "temperature reads high by"],
-       [[f"{off:+d}"] + [f"{drift[name][off]:.2f}" for name in ("p1_offset", "p2_offset", "t_offset")] for off in (-30, -10, 10, 30)])}
-
-* **P1 and P2 drift in opposite senses**, because only their difference counts: P2 reading 10 Pa high gives {p2_plus10:.2f} m³/s
-  ({(p2_plus10 / an.TARGET_FLOW - 1) * 100:+.1f} %); the same drift on P1 gives the opposite error. A common-mode drift of both cancels. With a ΔP of ~{centre['plate_dp_fixed']:.0f} Pa at this flow,
-  a 10 Pa error is a ~{10 / centre['plate_dp_fixed'] * 50:.0f} % flow error (half the ΔP error, from the square root).
-* **Temperature drift matters least**: +30 K → {(t_plus30 / an.TARGET_FLOW - 1) * 100:+.1f} % flow (only the gas density in the flow equation depends on it).
-
-## 6. How the control loop behaves
-
-Closed loop with the real `PIDController` (parallel form: `kp·e + ki·∫e + kd·de/dt`, output 0–100 % of the PID speed range).
-Setpoint step {4.0} → {5.0} m³/s, no sensor noise, settling = within 2 % of the final value:
+Closed loop with the real `PIDController`, output mapped to {p.pid_min_rpm:.0f}–{p.pid_max_rpm:.0f} rpm. Setpoint step
+{STEP_START} → {STEP_TARGET} m³/s, no sensor noise, settled = within 2 %:
 
 {table(["Kp ↓ / Ki →"] + [f"Ki {ki}" for ki in (0.05, 0.2, 0.5)],
-       [[f"Kp {kp}"] + [f"settle {secs(default_grid[(kp, ki)]['settle_s'])}, overshoot {default_grid[(kp, ki)]['overshoot_pct']:.1f} %" for ki in (0.05, 0.2, 0.5)] for kp in (0.5, 1.5, 3.0)])}
+       [[f"Kp {kp}"] + [f"settle {secs(grid_by[(kp, ki)]['settle_s'])}, overshoot {grid_by[(kp, ki)]['overshoot_pct']:.1f} %" for ki in (0.05, 0.2, 0.5)] for kp in (0.5, 1.5, 3.0)])}
 
 {figs['loop']}
 
-* **At low and moderate Ki, Ki sets the speed and more Kp makes the final approach slower, not faster.** With this fast plant (gas lag a few seconds) the
-  proportional term does most of the job at once and the integral finishes it; the effective integral speed is about Ki ÷ (1 + Kp·plant gain),
-  so at Ki 0.05 settling goes {secs(default_grid[(0.5, 0.05)]['settle_s'])} → {secs(default_grid[(1.5, 0.05)]['settle_s'])} → {secs(default_grid[(3.0, 0.05)]['settle_s'])} as Kp rises 0.5 → 1.5 → 3. At high Ki (0.5) the loop
-  rings and more Kp damps it instead: overshoot {default_grid[(0.5, 0.5)]['overshoot_pct']:.0f} % → {default_grid[(1.5, 0.5)]['overshoot_pct']:.0f} %. This is a property of the
-  parallel form used here; the PLC's PID (PIDAT, 2-DOF with a proportional band) will not behave identically, so any tuning found here is a starting
-  point for the PLC, not a copy (open item in `TODO.md`).
-* The default Kp {p.kp}, Ki {p.ki} settles in {secs(default_grid[(1.5, 0.2)]['settle_s'])} with {default_grid[(1.5, 0.2)]['overshoot_pct']:.1f} % overshoot: deliberately conservative.
-  Ki 0.5 is faster ({secs(default_grid[(1.5, 0.5)]['settle_s'])}) but overshoots {default_grid[(1.5, 0.5)]['overshoot_pct']:.0f} %.
-
-How the **time constants** of the plant, motor, sensors and scan limit the loop (default gains):
+* Ki sets the speed. The default Kp {p.kp}, Ki {p.ki} settles in {secs(grid_by[(1.5, 0.2)]['settle_s'])} with {grid_by[(1.5, 0.2)]['overshoot_pct']:.1f} % overshoot.
+  These gains are a starting point for the PLC's PID (PIDAT), not a copy: its form differs.
+* **Cold front** (outside 30 → 15 °C): the true flow deviates at most {disturbance['peak_deviation']:.2f} m³/s
+  ({disturbance['peak_deviation'] / an.TARGET_FLOW * 100:.1f} %); the fan settles at {disturbance['rpm_after']:.0f} rpm.
+* **Fuel charges** (kiln opened {charge['open_pct']:.0f} % wider for 60 s every 15 minutes): peak flow deviation
+  {charge['peak_deviation']:.2f} m³/s ({charge['peak_deviation'] / an.TARGET_FLOW * 100:.1f} %), fan speed moving between {charge['rpm_min']:.0f} and
+  {charge['rpm_max']:.0f} rpm. The size of the opening is a guess; stage 2 will supply it from the kiln model.
+* **Saturation and windup:** after 10 minutes pinned at minimum speed, recovery takes **{secs(windup['with'])} with anti-windup
+  against {secs(windup['without'])} without**. The PLC's PID must have anti-windup.
 
 {table(["parameter", "value s", "settling", "overshoot"],
        [[SPEC_BY_NAME[r['param']].label, r['value'], secs(r['settle_s']), f"{r['overshoot_pct']:.1f} %"] for r in lags])}
 
-* The loop stays stable in every case tested, and the scan interval (0.5–5 s) hardly matters. A moderate lag even makes the conservative default
-  settle sooner (the controller over-drives a little), which is not a free improvement: overshoot appears once a lag reaches tens of seconds:
-  gas flow lag {lag_by[('flow_tau_s', 30.0)]['value']:.0f} s → {lag_by[('flow_tau_s', 30.0)]['overshoot_pct']:.0f} % overshoot and {secs(lag_by[('flow_tau_s', 30.0)]['settle_s'])} settling;
-  motor/fan lag {lag_by[('motor_tau_s', 20.0)]['value']:.0f} s → {lag_by[('motor_tau_s', 20.0)]['overshoot_pct']:.0f} % overshoot; sensor lag {lag_by[('sensor_tau_s', 10.0)]['value']:.0f} s → {lag_by[('sensor_tau_s', 10.0)]['overshoot_pct']:.0f} %.
-  A large fan on a big inertia, or impulse lines choked with tar (slow sensors), are the realistic ways to get there.
-* **Weather disturbance:** a cold front (outside 25 → 5 °C) lifts the natural flow to {disturbance['natural_after']:.2f} m³/s; the loop moves the fan to {disturbance['rpm_after']:.0f} rpm. The true flow
-  deviates at most {disturbance['peak_deviation']:.2f} m³/s ({disturbance['peak_deviation'] / an.TARGET_FLOW * 100:.1f} %) and is back within 2 % after {secs(disturbance['recovery_s'])}.
-  With these placeholder numbers feed-forward on ambient temperature would add little (§7).
-* **Saturation and windup:** after 10 minutes with the setpoint below what the fan can reach (fan pinned at minimum), the time to get back to a reachable setpoint is
-  **{secs(windup['with'])} with anti-windup versus {secs(windup['without'])} without**. The real `PIDController` has no anti-windup of its own (the simulation adds it around it); the PLC's PID must have it, or the
-  loop will sit wound-up for many minutes after a long saturation (cold nights, hot kiln, a closed damper).
-* **Sensor faults** (covered by tests, not by a table): an open circuit (counts 8000) on P1, P2 or T drops the fan to the safe speed at once and the loop resumes bumplessly
-  when repaired. A *stuck* signal looks healthy to the controller and is not detected — the flow error then grows with the real process.
+* The loop stays stable for every lag tested; the worst cases are gas flow lag {lag_by[('flow_tau_s', 30.0)]['value']:.0f} s
+  ({lag_by[('flow_tau_s', 30.0)]['overshoot_pct']:.0f} % overshoot) and motor lag {lag_by[('motor_tau_s', 20.0)]['value']:.0f} s
+  ({lag_by[('motor_tau_s', 20.0)]['overshoot_pct']:.0f} %).
+* Sensor faults (covered by tests): an open circuit (counts 8000) on any channel drops the fan to the safe speed and the loop
+  resumes bumplessly when repaired. A stuck signal, or a transmitter pinned at the bottom of its range, looks healthy.
 
-## 7. What this suggests
+## 9. What this suggests
 
-1. **Measure these first on site** (largest effect on the answer, §4): duct diameter and plate bore (a tape measure), gas composition / molar mass (flue-gas analysis over a
-   firing cycle), plate Cd (calibration or a reference measurement), gas temperature at the plate, chimney height.
-2. **Check the transmitter range against the fan's top speed.** The placeholder shows P2 at {at_max['p2_range_use'] * 100:.0f} % of range at maximum rpm. Choose range, β and fan size together (§5.5).
-3. **Decide the minimum fan speed deliberately.** It sets the lowest flow you can hold (§5.3). If the process needs lower flows in cold weather, plan a damper.
-4. **Feed-forward on ambient temperature looks low priority** if the real plant resembles this model: the PID absorbs a {disturbance['peak_deviation'] / an.TARGET_FLOW * 100:.0f} % transient and recovers in seconds. Revisit once real data exists.
-5. **Make sure the PLC's PID has anti-windup and bumpless start** (§6). Without them a long saturation costs many minutes.
-6. **Expect the same setting to behave differently in summer and winter** (the fan's loop gain changes by tens of percent with the draft, §5.1); tune at the awkward end.
-7. **A drifting P1 or P2 is a flow error you cannot see**; a ΔP-based cross-check or periodic zero check on both transmitters is worth having (§5.6).
+1. **Do a speed step test on site**: five or six fan speeds, log rpm, P1, P2 and temperature. It answers the restriction
+   question (§3), the legacy value question (§5) and gives a fan-and-system curve.
+2. **Confirm the chimney's inside dimensions** and what sits between the plate and the chimney.
+3. **Get the fan curve or nameplate** (§7).
+4. **Choose the minimum fan speed deliberately**: above the resonance band and above the speed where P2 can be read (§4).
+5. **Do not carry the legacy formula forward untested.** Characterise it against logs first (§5).
+6. **Zero-check both transmitters regularly**: 5 Pa of drift is a {abs(p2_plus5 / an.TARGET_FLOW - 1) * 100:.0f} % flow error (§6.6).
+7. **Make sure the PLC's PID has anti-windup and bumpless start** (§8).
 
-## 8. What the model leaves out
+## 10. What the model leaves out
 
-* All values are placeholders (§ top). Flows, pressures and rpm are illustrative.
-* Incompressible pressure balance (plate ΔP is ~{centre['plate_dp_fixed'] / p.p_atm_pa * 100:.2f} % of atmospheric); hydrostatic effects in horizontal ducts ignored.
-* Heat reuse is a fixed extraction fraction and a fixed loss; in reality they depend on the stages in use and on fouling. Gas temperature at the plate follows the kiln with a first-order lag.
-* A stopped fan is a passive restriction (no windmilling); flow never reverses (it stalls at zero).
-* Gas composition is a single molar mass; no condensation, tar fouling, or moisture in the plate calculation.
-* The controller's flow estimate is a clean orifice equation, **not** the legacy empirical `calc_pv` (its input units are unverified and its constants must not be touched).
-* The PID is the textbook parallel form in `fan-ctrl/pid.py` with sim-side anti-windup and bumpless start; the PLC's PIDAT may differ.
-* No PLC/HMI/drive communication delays, no heartbeat or fallback-table behaviour (planned in `TODO.md`).
-* One kiln, one fan, one chimney, no interaction between several kilns or dampers.
+* Placeholder values (see top). The fit in §3 uses one operating point; one point cannot fix four unknowns.
+* The restriction stands for an unexplained loss. If the cause is cooling or a different tap position, its behaviour with
+  speed will differ from a fixed opening.
+* The kiln is one free area and one gas temperature. Dampers, fuel charges and the moving fire are stage 2
+  (`project/whole-kiln-simulation-plan.md`).
+* Incompressible pressure balance; static pressures only (velocity-head changes between sections ignored except the exit loss).
+* Fan heating ignored; a stopped fan is a passive restriction; flow never reverses.
+* Gas composition is a single molar mass; no condensation or tar. Reynolds numbers use the viscosity of air.
+* The PID is the parallel form in `fan-ctrl/pid.py` with simulation-side anti-windup and bumpless start.
+* No PLC, HMI or drive communication delays, heartbeat or fallback table.
 
-## 9. Reproduce
+## 11. Reproduce
 
 ```
 .venv\\Scripts\\activate

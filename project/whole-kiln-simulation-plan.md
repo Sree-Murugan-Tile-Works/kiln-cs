@@ -180,10 +180,14 @@ Stage 2 adds a kiln view next to the stage 1 fan-and-chimney scene:
    inside the drive. This repository describes an Omron PLC running the PID. Which is on site now?
 3. **Chimney height.** 120 ft in `docs/Kiln-Domain.md`; 125 ft in the cold-start document and from
    the owner on 2026-11-16. Stage 1 uses 125 ft.
-4. **Legacy flow formula.** With the listed constants and the screenshot readings the formula gives
-   about 1608 using the gauge pressure ratio and about 65 using absolute pressures. The screen shows
-   40.33. A scaling or filtering step is missing. `backend/data/LabVIEW Flow Calc Formula.png` and
-   the logs should settle it.
+4. **Legacy flow formula.** Corrected 2026-11-17: with the formula exactly as coded (`* 1000` inside
+   the square root, gauge pressure ratio, T in kelvin) the screenshot readings give 31.0 with
+   `a2 = 0.6096 ** 2` (the `fan-ctrl/config.py` default) and 50.9 with `a2 = 0.6096`. The screen shows an
+   averaged 40.33. An earlier version of this item quoted 1608 and 65; those placed the `* 1000`
+   outside the square root. Which `a2` the old system used is open. The stage 1 simulation also
+   shows that the value depends on back-pressure and need not rise with flow
+   (`project/simulation-report.md` §5). `backend/data/LabVIEW Flow Calc Formula.png` and the logs
+   should settle it.
 5. **Code reuse.** The cold-start model belongs to the VelKilnMaster repository. Copying or adapting
    it here needs that repository owner's agreement, and a decision on whether to copy it or depend
    on it.

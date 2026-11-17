@@ -1,6 +1,10 @@
 # Simulation upgrade plan (stage 1)
 
-**Status:** draft for team review, 2026-11-16. Nothing in this plan is implemented yet.
+**Status:** built 2026-11-17 (build stages A to E in `project/simulation-build-plan.md`). Where the build
+differs from this plan, the build plan §3 and `project/simulation-report.md` are the record. Main
+differences: resistances are written as free areas (`kiln_free_area_m2`, `restriction_free_area_m2`)
+instead of `k_upstream`; transmitters are one-sided 0-250 Pa; a resonance band, the legacy formula
+value and kiln disturbances were added. The open questions in §8 are still open.
 **Stage 2** (the whole kiln: ring of fireboxes, dampers, fuel feeding, tiles) is in
 `project/whole-kiln-simulation-plan.md` and builds on this stage.
 **Scope:** the process simulation in `sim/` and its GUI only. No change to `fan-ctrl/`, `dashboard/`

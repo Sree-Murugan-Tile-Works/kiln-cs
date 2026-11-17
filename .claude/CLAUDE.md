@@ -49,7 +49,7 @@ gunicorn -w 2 -b 0.0.0.0:5001 web:app
 
 Optional dashboard env vars: `APP_USER` / `APP_PASS` (HTTP Basic Auth on the `/config` and `/api/config` routes — disabled if unset), `FLASK_SECRET`, `CONFIG_DB`, `DATA_DB`.
 
-Tests: `pytest` from the project root (`tests/fan_ctrl`, `tests/dashboard`, `tests/sim`; 285 passed on 2026-11-16). The process simulation runs with `python -m sim.server` (http://127.0.0.1:5002).
+Tests: `pytest` from the project root (`tests/fan_ctrl`, `tests/dashboard`, `tests/sim`; 352 passed on 2026-11-17). The process simulation runs with `python -m sim.server` (http://127.0.0.1:5002); its report is regenerated with `python -m sim.report`. Build stages and status are in `project/simulation-build-plan.md`.
 
 ---
 

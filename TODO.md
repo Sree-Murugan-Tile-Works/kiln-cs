@@ -22,7 +22,7 @@
 - [ ] Collect calibration data for the simulation and for `calc_pv` golden tests: LabVIEW minute logs (`C:\Labview-Logs\` on the SCADA PC: P1, P2, exhaust temperature, flow, rpm), firebox temperature and event exports from the VelKilnMaster database, the ID fan curve or nameplate, main flue and damper flue cross-sections
 - [ ] Resolve why the legacy flow formula with the VelKilnMaster constants (C 0.7, A2 0.6096, M 89) does not reproduce the screenshot value 40.33 at P1 119.2 Pa, P2 87 Pa, 130.4 degC (gives about 1608 with the gauge ratio, about 65 with absolute pressures)
 - [ ] **Get team review** of `project/simulation-upgrade-plan.md` (plate moved to between fan and chimney, heat reuse removed, tapered square chimney 125 ft / 5 ft base / 3 ft top, atmosphere with height, temperature-coloured tube with density particles, more calculations) and answer its §8 open questions; then implement in one pass
-- [ ] Correct `project/process-description.md` §2: the orifice plate is between the fan and the chimney, not upstream of the fan (owner, 2026-11-16); done as part of the simulation upgrade
+- [x] Correct `project/process-description.md` §2: the orifice plate is between the fan and the chimney, not upstream of the fan (owner, 2026-11-16); done as part of the simulation upgrade — done 2026-11-17 in build stage E
 - [ ] Close the site verification checklist in `project/connection-diagram.md` §9 (channel order, signal types, pressure sign, PLC Setup, drive parameter backup, STO jumpers, HMI model)
 - [ ] Sensor fault detection by count bands as well as the 8000 code (TxRail failure gives about 6190 or -75 counts, not 8000); consider moving T from 0-10 V to 4-20 mA for wire-break detection (`project/connection-diagram.md` §8 items 1-2)
 - [ ] Guard `calc_pv` inputs in `fan-ctrl/plc.py: read_all` (P1 = 0, ratio above 1 or negative, AD041 zero counts at power-up) without changing the formula
@@ -72,7 +72,7 @@
 - [ ] Review `project/simulation-report.md` with the owner/team; replace placeholder parameters with site values in the order the report ranks them (duct diameter, plate bore, gas molar mass, plate Cd, chimney height, gas temperature at the plate)
 - [ ] Check the transmitter range against the fan's top speed (placeholder P2 reaches 108 % of range at maximum rpm) and decide the minimum fan speed deliberately (sets the lowest holdable flow)
 - [ ] Confirm the PLC's PID (PIDAT) has anti-windup and bumpless start; the simulation shows ~19 minutes recovery without anti-windup after 10 minutes of saturation
-- [ ] Build the simulation in stages A-J per `project/simulation-build-plan.md` (one commit per stage; A-D done)
-- [ ] Correct the legacy formula figures in `project/whole-kiln-simulation-plan.md` §7 item 4 (see build plan §5)
+- [ ] Build the simulation in stages A-J per `project/simulation-build-plan.md` (one commit per stage). Stage 1 (A-E) done 2026-11-17: commits d1e166a, 6647663, 399bea4, 774740a and the stage E commit. Stage 2 (F-J) not started
+- [x] Correct the legacy formula figures in `project/whole-kiln-simulation-plan.md` §7 item 4 (see build plan §5) — done 2026-11-17
 - [ ] Site check: speed step test (rpm against P1, P2) to explain the 200 Pa after the plate and the legacy value behaviour
 - [ ] Decide the minimum fan speed: model says P2 is unreadable below about 245 rpm with 0-250 Pa transmitters
