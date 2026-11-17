@@ -124,6 +124,9 @@ class SimRunner:
                 "offsets": dict(self.offsets), "values": dict(self.values),
                 "time_s": self.loop.time_s,
                 "records": [r for r in self.history if r["time_s"] > since],
+                # The picture needs the whole path, but only for the latest instant, so it is
+                # built here and not stored with every history record.
+                "profile": self.loop.profile(),
             }
 
 

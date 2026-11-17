@@ -112,3 +112,22 @@ def test_background_thread_advances_the_simulation():
         assert runner.loop.time_s >= 3
     finally:
         runner.stop()
+
+
+def test_state_carries_the_profile_of_the_latest_instant_only(client):
+    c, runner = client
+    runner.advance(5)
+    state = c.get("/api/state").get_json()
+    profile = state["profile"]
+    assert {"stations", "chimney", "top", "ground", "geometry", "calcs", "pressure_exaggeration"} <= profile.keys()
+    assert len(profile["chimney"]) == 20
+    assert profile["geometry"]["height_m"] == pytest.approx(38.1)
+    assert profile["calcs"]["q_plate_m3_s"] == pytest.approx(state["records"][-1]["flow_true_m3s"])
+    assert all("profile" not in record for record in state["records"])     # history stays small
+
+
+def test_profile_follows_a_slider_change(client):
+    c, runner = client
+    c.post("/api/params", json={"chimney_top_side_m": 0.5})
+    runner.advance(1)
+    assert c.get("/api/state").get_json()["profile"]["geometry"]["top_side_m"] == 0.5

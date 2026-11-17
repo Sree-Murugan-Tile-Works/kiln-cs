@@ -167,3 +167,12 @@
     with this value for years, so either the real back-pressure behaves differently from the
     modelled restriction, or the legacy inputs are not plain gauge pressures. A speed step test
     on site (rpm against P1 and P2) would settle it.
+
+## 2026-11-17 — Build stage C: calculations and profile data
+- New `sim/profile.py`: stations, chimney slices, outside air at matching heights, particle densities
+  (true and exaggerated x100 for the picture only) and calculations (velocities, Reynolds numbers,
+  pressure budget, fan air and shaft power, heat carried and lost, draft share).
+- `/api/state` carries `profile` for the latest instant only; history records are unchanged.
+- At the default point: 11.2 t/h of gas, 3.0 m/s in the duct, 4.2 m/s at the chimney exit, about
+  1.1 kW of fan air power, 344 kW carried above ambient, 51 kW lost through the chimney wall.
+- 352 tests pass.

@@ -15,7 +15,8 @@ import random
 from sim import params as sim_params
 from sim.instruments import (Transmitter, counts_valid, counts_saturated, estimate_flow, legacy_flow,
                              COUNTS_FULL_SCALE, FAULTS)
-from sim.plant import Plant, environment, kiln_area_factor, solve_steady, OperatingPoint
+from sim.plant import Plant, environment, kiln_area_factor, operating_point, solve_steady, OperatingPoint
+from sim.profile import build_profile
 
 from calculation import Scaler          # fan-ctrl
 from command import Command             # fan-ctrl
@@ -36,6 +37,9 @@ class ClosedLoop:
         t_amb, t_gas = environment(self.p, 0.0)
         start_rpm = min(self.p.motor_max_rpm, max(self.p.motor_min_rpm, self.p.safe_rpm))
         self.plant = Plant(self.p, start_rpm, t_gas, t_amb)
+        # The latest instant, kept so the GUI picture can be built on demand (see ``profile``).
+        self._last_t_amb = t_amb
+        self._last_op = operating_point(self.p, self.plant.mass_flow, start_rpm, t_gas, t_amb)
         self.transmitters = {
             "p1": Transmitter(0, 1, 1, 0, rng),
             "p2": Transmitter(0, 1, 1, 0, rng),
@@ -77,6 +81,10 @@ class ClosedLoop:
         if channel not in CHANNELS:
             raise ValueError(f"channel must be one of {CHANNELS}")
         self.transmitters[channel].offset = offset
+
+    def profile(self) -> dict:
+        """Stations, chimney slices and calculations for the latest instant (for the GUI picture)."""
+        return build_profile(self.p, self._last_op, self._last_t_amb)
 
     # ------------------------------------------------------------ helpers
     def _drive_cfg(self) -> AttrDict:
@@ -198,6 +206,7 @@ class ClosedLoop:
         for _ in range(sub_steps):
             op = self.plant.step(dt / sub_steps, self.drive_reference_rpm, t_gas_target, t_amb, area_factor)
         self.time_s += dt
+        self._last_op, self._last_t_amb = op, t_amb
 
         counts = {"p1": self.transmitters["p1"].sample(op.p1_pa, dt),
                   "p2": self.transmitters["p2"].sample(op.p2_pa, dt),
