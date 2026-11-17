@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whole Kiln Simulation</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="kiln-page">
+<header class="topbar">
+  <h1>Whole kiln simulation</h1>
+  <div class="chips">
+    <span class="chip" id="chip-time">day 0, 00:00</span>
+    <span class="chip" id="chip-status">starting…</span>
+    <span class="chip warn">placeholder parameters, not site data</span>
+    <a class="chip link" href="/">← Exhaust path view</a>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="panel params" aria-label="Kiln controls">
+    <div class="panel-head"><h2>Run</h2></div>
+    <div class="row">
+      <button id="btn-run">Pause</button>
+      <button id="btn-reset" title="Start the kiln again from the nominal profile (controls are kept)">Restart</button>
+      <label class="inline">speed <select id="speed"></select></label>
+    </div>
+
+    <details class="group" open>
+      <summary>Operation</summary>
+      <div id="controls"></div>
+    </details>
+
+    <details class="group" open>
+      <summary>Upsets</summary>
+      <div class="upset">
+        <label class="name" for="skip-count">Skip the next charges on every firing unit</label>
+        <div class="row"><input type="number" id="skip-count" min="1" max="40" step="1" value="4" aria-label="Number of charges to skip"> charges
+          <button id="btn-skip" class="small">Skip</button></div>
+      </div>
+      <div class="upset">
+        <label class="name" for="damper-unit">Hold a damper at a lift (left open)</label>
+        <div class="row"><select id="damper-unit" aria-label="Damper"></select>
+          <input type="number" id="damper-lift" min="0" max="23.5" step="0.5" value="9" aria-label="Lift in inches"> in
+          <button id="btn-damper" class="small">Hold</button></div>
+      </div>
+      <div class="upset">
+        <label class="name" for="door-unit">Open a door early</label>
+        <div class="row"><select id="door-unit" aria-label="Door"></select>
+          <select id="door-pos" aria-label="Door position"><option value="open">open</option><option value="part-open">part-open</option></select>
+          <button id="btn-door" class="small">Apply</button></div>
+      </div>
+      <div class="row"><button id="btn-clear" class="small">Clear all upsets</button></div>
+      <p class="help" id="upset-status">No upsets active.</p>
+    </details>
+
+    <p class="note placeholder-note">Every heat-transfer, brick, recipe and porthole value in this model is a placeholder tuned to
+      give plant-like behaviour (peak about 900 °C, exhaust about 130 °C at 380 rpm). They are not site data and the
+      model has not been checked against kiln logs.</p>
+  </aside>
+
+  <main class="stage">
+    <section class="kpis kiln-kpis" aria-label="Live values">
+      <div class="kpi"><span>Fire at</span><b id="k-fire">–</b><i id="k-fire-sub">firebox</i></div>
+      <div class="kpi"><span>Peak point</span><b id="k-peak">–</b><i id="k-peak-sub">°C</i></div>
+      <div class="kpi"><span>Exhaust to the fan</span><b id="k-exh">–</b><i>°C</i></div>
+      <div class="kpi"><span>Gas to the fan</span><b id="k-flow">–</b><i>kg/s</i></div>
+      <div class="kpi"><span>Fan speed</span><b id="k-rpm">–</b><i>rpm</i></div>
+      <div class="kpi"><span>P1 / P2 (gauge)</span><b id="k-p">–</b><i>Pa</i></div>
+      <div class="kpi"><span>Fuel, last hour</span><b id="k-fuel">–</b><i>kg</i></div>
+      <div class="kpi"><span>Energy balance error</span><b id="k-err">–</b><i>of heat in</i></div>
+    </section>
+
+    <section class="panel" aria-label="Plan view of the kiln ring">
+      <div class="panel-head"><h2>Plan view: 60 room units, gas and fire travel clockwise</h2></div>
+      <div class="ring-scroll"><canvas id="ring" role="img" aria-label="Plan of the kiln ring. East battery 1 to 30 on top, west battery 31 to 60 below, joined by the interconnecting flues. Cells are coloured by temperature."></canvas></div>
+      <div class="ring-legend" id="ring-legend"></div>
+    </section>
+
+    <section class="panel" aria-label="Temperature round the ring">
+      <div class="panel-head"><h2>Temperature and tile water round the ring</h2></div>
+      <div class="legend" id="profile-legend"></div>
+      <canvas id="profile" role="img" aria-label="Temperature of gas point, tiles and brick against firebox number, with remaining tile water as bars"></canvas>
+    </section>
+
+    <section class="panel" aria-label="Gas flow through the dampers">
+      <div class="panel-head"><h2>Gas to the main flue through each lifted damper</h2></div>
+      <div id="dampers" class="damper-list"></div>
+    </section>
+
+    <section class="charts" aria-label="History">
+      <div id="kiln-charts"></div>
+    </section>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/static/kiln.js"></script>
+</body>
+</html>

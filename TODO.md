@@ -72,10 +72,12 @@
 - [ ] Review `project/simulation-report.md` with the owner/team; replace placeholder parameters with site values in the order the report ranks them (duct diameter, plate bore, gas molar mass, plate Cd, chimney height, gas temperature at the plate)
 - [ ] Check the transmitter range against the fan's top speed (placeholder P2 reaches 108 % of range at maximum rpm) and decide the minimum fan speed deliberately (sets the lowest holdable flow)
 - [ ] Confirm the PLC's PID (PIDAT) has anti-windup and bumpless start; the simulation shows ~19 minutes recovery without anti-windup after 10 minutes of saturation
-- [ ] Build the simulation in stages A-J per `project/simulation-build-plan.md` (one commit per stage). Stage 1 (A-E) done 2026-11-17: commits d1e166a, 6647663, 399bea4, 774740a and the stage E commit. Stages F, G done; H done 2026-11-17 (fuel, combustion, gas, tile and brick heat, drying); I-J not started
+- [ ] Build the simulation in stages A-J per `project/simulation-build-plan.md` (one commit per stage). Stage 1 (A-E) done 2026-11-17: commits d1e166a, 6647663, 399bea4, 774740a and the stage E commit. Stages F, G done; H done 2026-11-17 (fuel, combustion, gas, tile and brick heat, drying, commit 07ab14e); I done 2026-11-17 (kiln page at /kiln); J not started (needs site data)
 - [x] Correct the legacy formula figures in `project/whole-kiln-simulation-plan.md` §7 item 4 (see build plan §5) — done 2026-11-17
 - [ ] Site check: speed step test (rpm against P1, P2) to explain the 200 Pa after the plate and the legacy value behaviour
 - [ ] Decide the minimum fan speed: model says P2 is unreadable below about 245 rpm with 0-250 Pa transmitters
 - [ ] Whole-kiln model calibration (stage J): replace the tuned placeholders in `sim/kiln/params.py` (brick mass 25 t, gas-to-tile and gas-to-brick h*A 1500 W/K, wall loss 22 W/K per unit, porthole area and open time, burn time constant, recipe shape) using the 60 firebox temperature logs and the LabVIEW exhaust logs
 - [ ] Read the firing plan workbook (`Kiln Firing Schedule.xlsx`) for the real charge weights per box, the coal stages and which boxes carry conditions; the model uses a ramp-hold-taper shape scaled to 724 kg
+- [ ] Check the kiln page (`/kiln`) and the exhaust page at phone width in a real browser; headless screenshots at 420 px looked clipped and could not be trusted
+- [ ] Kiln page: offer a flow setpoint (fan speed solved to hold it) as well as a fixed fan speed; join the kiln model to the stage 1 PID loop for control studies
 - [ ] Kiln model: decide whether tiles should also dry below 100 degC (pre-drying "sweating") and whether the handling zone needs its own cooling model (brick there now loses heat only through the wall)

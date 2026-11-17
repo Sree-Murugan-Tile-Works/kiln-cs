@@ -1,8 +1,8 @@
 # Simulation build plan (stages and commits)
 
 **Status:** written 2026-11-17. Owner asked for a multi-stage build with a commit after each stage.
-**Stages A to E (stage 1) and F to H (stage 2) are built and committed; I and J are not done
-(see the status table).** This file fixes the order of work and the design decisions so the build can resume at
+**Stages A to I are built and committed; J (calibration) is not started because it needs site
+data (see the status table).** This file fixes the order of work and the design decisions so the build can resume at
 any stage.
 **Scope:** `sim/`, `tests/sim/` and documents only. Dev machine only. No change to `fan-ctrl/`,
 `dashboard/` or hardware. The legacy `calc_pv` formula is called, never changed.
@@ -51,7 +51,7 @@ Status on 2026-11-17:
 | F | done | `sim/kiln/layout.py`, `sim/kiln/schedule.py` |
 | G | done | `sim/kiln/network.py`; the kiln is 0.18 m2 to the fan |
 | H | done | `sim/kiln/fuel.py`, `thermal.py`, `kilnsim.py`. Settles at peak about 910 degC, exhaust about 135 degC, P1 125 Pa, P2 91 Pa at 380 rpm; energy balance closes to about 1e-14. Heat-transfer and brick values are tuned placeholders |
-| I | not started | |
+| I | done | `/kiln` page (`sim/static/kiln.html`, `kiln.js`, `sim/kiln_runner.py`, `/api/kiln/...`). Checked by headless screenshots: dark and light theme at 1500 px, with upsets active. Not verified: phone width (headless window would not go narrow enough to trust), real browsers, hover/keyboard use |
 | J | not started | Needs the site data in `project/whole-kiln-simulation-plan.md` §5 |
 
 ---

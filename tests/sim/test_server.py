@@ -8,6 +8,7 @@ def client():
     app = create_app(autostart=False)       # no background thread: tests advance the simulation by hand
     yield app.test_client(), app.config["RUNNER"]
     app.config["RUNNER"].stop()
+    app.config["KILN_RUNNER"].stop()
 
 
 def test_index_and_static_files_are_served(client):
@@ -115,6 +116,7 @@ def test_background_thread_advances_the_simulation():
         assert runner.loop.time_s >= 3
     finally:
         runner.stop()
+        app.config["KILN_RUNNER"].stop()
 
 
 def test_state_carries_the_profile_of_the_latest_instant_only(client):

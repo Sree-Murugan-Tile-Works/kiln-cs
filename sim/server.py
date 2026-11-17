@@ -5,8 +5,11 @@ A background thread steps the closed loop (``sim.loop.ClosedLoop``) faster than 
 a rolling history. The browser only draws: sliders are built from the parameter registry, every
 change is validated here, and all numbers come from the simulation.
 
+A second page, ``/kiln``, shows the whole-kiln model (stage 2) from its own runner
+(``sim.kiln_runner.KilnRunner``) with its own ``/api/kiln/...`` routes.
+
 Run:  python -m sim.server            (from the repo root, venv active)
-Then open http://127.0.0.1:5002
+Then open http://127.0.0.1:5002 (exhaust path) or http://127.0.0.1:5002/kiln (whole kiln)
 """
 import argparse
 import threading
@@ -16,6 +19,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 from sim.instruments import FAULTS
+from sim.kiln_runner import KilnRunner
 from sim.loop import ClosedLoop, CHANNELS, DEFAULT_COMMAND
 from sim.params import make_params, params_to_dict, specs_as_dicts
 
@@ -193,6 +197,47 @@ def create_app(autostart: bool = True) -> Flask:
         except ValueError as exc:
             return bad_request(str(exc))
         return jsonify({"running": runner.running, "speed": runner.speed})
+
+    # ------------------------------------------------------------------ kiln page (stage 2)
+    kiln = KilnRunner(autostart=autostart)
+    app.config["KILN_RUNNER"] = kiln
+
+    @app.get("/kiln")
+    def kiln_page():
+        return send_from_directory(STATIC_DIR, "kiln.html")
+
+    @app.get("/api/kiln/state")
+    def kiln_state():
+        return jsonify(kiln.snapshot(since=request.args.get("since", default=-1.0, type=float)))
+
+    @app.post("/api/kiln/params")
+    def kiln_params():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return bad_request("expected a JSON object of control values")
+        try:
+            kiln.set_controls(body)
+        except (ValueError, TypeError) as exc:
+            return bad_request(str(exc))
+        return jsonify({"controls": kiln.controls})
+
+    @app.post("/api/kiln/upset")
+    def kiln_upset():
+        body = request.get_json(silent=True) or {}
+        try:
+            result = kiln.upset(body)
+        except (ValueError, TypeError) as exc:
+            return bad_request(str(exc))
+        return jsonify({"ok": True, **result})
+
+    @app.post("/api/kiln/control")
+    def kiln_control():
+        body = request.get_json(silent=True) or {}
+        try:
+            kiln.control(body.get("action", "none"), body.get("speed"))
+        except ValueError as exc:
+            return bad_request(str(exc))
+        return jsonify({"running": kiln.running, "speed": kiln.speed})
 
     return app
 

@@ -30,6 +30,7 @@ All heat-transfer and brick numbers are TUNED PLACEHOLDERS (see ``sim.kiln.param
 """
 import dataclasses
 import math
+from collections import deque
 
 from sim.kiln.fuel import burn, charge_mass_kg, charge_plan, lhv_j_kg, MAX_MOISTURE
 from sim.kiln.layout import FIREBOX_COUNT, LAYOUT
@@ -97,6 +98,7 @@ class KilnSim:
         self.energy = {term: 0.0 for term in ENERGY_TERMS}
         self._stored_start = stored_heat_j(self.kp, self.solids, self.t_ref_c)
         self.fuel_fed_total_kg = 0.0
+        self._fed_recent: deque[tuple[float, float]] = deque()    # (time, kg) of the last hour's charges
         self.last_state = state
         self.last_result = None
         self.last_op = None
@@ -281,6 +283,9 @@ class KilnSim:
         self.gas_c = list(result.gas_c)
         self.time_s += dt
         self.fuel_fed_total_kg += fed
+        self._fed_recent.append((self.time_s, fed))
+        while self._fed_recent[0][0] <= self.time_s - SECONDS_PER_HOUR:
+            self._fed_recent.popleft()
 
         e = self.energy
         e["fuel"] += result.fuel_w * dt
@@ -313,7 +318,7 @@ class KilnSim:
             "t_ambient_c": self.t_amb_c,
             "peak_point_c": self.point_c[peak], "peak_unit": peak + 1, "peak_gas_c": max(r.gas_c),
             "peak_tile_c": max(t for t, has in zip(self.solids.tile_c, self.solids.has_tiles) if has),
-            "fuel_fed_kg": fed_kg, "fuel_fed_kg_h": fed_kg * SECONDS_PER_HOUR / self.dt_s,
+            "fuel_fed_kg": fed_kg, "fuel_last_hour_kg": sum(kg for _, kg in self._fed_recent),
             "fuel_burnt_kg_s": r.fuel_kg_s, "heat_release_kw": r.fuel_w / 1000.0,
             "air_in_kg_s": r.air_in_kg_s, "vapour_kg_s": r.vapour_kg_s, "vented_kg_s": r.vented_kg_s,
             "exhaust_kw": r.exhaust_w / 1000.0, "wall_loss_kw": r.wall_loss_w / 1000.0, "latent_kw": r.latent_w / 1000.0,
