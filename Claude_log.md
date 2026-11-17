@@ -257,3 +257,14 @@
   - Fixed fan speed only: the kiln model is not yet connected to the PID loop.
   - One simulated week took 21 s here (the agent measured 8.8 s); the test suite now takes about 75 s.
 - `.claude/CLAUDE.md` test count corrected to 461.
+
+## 2026-11-17 — Walkthrough report with screenshots
+- Owner asked to run the GUI, take screenshots and write a report on what is what and the findings.
+- Added `project/simulation-walkthrough.md` and 12 screenshots in `project/simulation-walkthrough/`:
+  both pages explained part by part, six scenarios (fan slow, fan at maximum, fuel charges and damper
+  swing, P2 drifting 5 Pa, settled kiln, four hours without fuel), ten findings, site actions.
+- `sim/static/app.js` and `kiln.js`: two address options, `?theme=light` and (exhaust page)
+  `?exaggerate=0`, so those views can be opened directly. They let the true-scale view and the light
+  theme be checked by eye, which was outstanding from stage D. Both look correct.
+- Kiln screenshots were taken from a separate server instance so the owner's open session was not disturbed.
+- Still not checked: phone-width windows.

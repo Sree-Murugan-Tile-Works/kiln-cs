@@ -1,4 +1,8 @@
 "use strict";
+// Optional view settings in the address, for sharing a view or taking screenshots:
+//   ?theme=light      force the light theme (the default follows the computer's setting)
+const VIEW_OPTIONS = new URLSearchParams(window.location.search);
+if (VIEW_OPTIONS.get("theme") === "light") document.documentElement.dataset.theme = "light";
 // Thin client: every number comes from the Python simulation. This file only builds the sliders
 // from /api/specs, sends changes to the server, and draws what /api/state returns.
 
@@ -540,6 +544,7 @@ async function init() {
   buildControls(specs.faults);
   buildCharts();
   Scene.init($("scene"), $("strip"));
+  if (VIEW_OPTIONS.get("exaggerate") === "0") $("exaggerate").checked = false;   // ?exaggerate=0: true scale
   Scene.setExaggerate($("exaggerate").checked);
   const first = await api("/api/state");
   syncSliders(first.values);

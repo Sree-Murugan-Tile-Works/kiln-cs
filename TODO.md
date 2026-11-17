@@ -83,3 +83,4 @@
 - [ ] Kiln model: decide whether tiles should also dry below 100 degC (pre-drying "sweating") and whether the handling zone needs its own cooling model (brick there now loses heat only through the wall)
 - [ ] Kiln model: make handling-zone rooms cool realistically (air through open doors, unloading time) before tiles are reloaded; the model leaves them at 75-150 degC
 - [ ] Kiln model: replace the tuned wall loss (45 % of fuel heat) with a value from the insulation data or site measurements
+- [ ] Review `project/simulation-walkthrough.md` with the team and carry out the site actions in its section 6 (speed step test first)

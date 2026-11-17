@@ -1,4 +1,8 @@
 "use strict";
+// Optional view settings in the address, for sharing a view or taking screenshots:
+//   ?theme=light      force the light theme (the default follows the computer's setting)
+const VIEW_OPTIONS = new URLSearchParams(window.location.search);
+if (VIEW_OPTIONS.get("theme") === "light") document.documentElement.dataset.theme = "light";
 // Thin client for the whole-kiln page: every number comes from the Python simulation
 // (/api/kiln/state). This file only sends operator inputs and draws.
 
