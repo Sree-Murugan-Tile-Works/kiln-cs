@@ -49,7 +49,8 @@ Status on 2026-11-17:
 | D | done | Checked by headless screenshots at default, 100 rpm and 450 rpm. Not checked by eye: true-scale view, light theme, phone width |
 | E | done | `project/simulation-report.md` regenerated |
 | F | done | `sim/kiln/layout.py`, `sim/kiln/schedule.py` |
-| G to J | not started | |
+| G | done | `sim/kiln/network.py`; the kiln is 0.18 m2 to the fan |
+| H to J | not started | |
 
 ---
 

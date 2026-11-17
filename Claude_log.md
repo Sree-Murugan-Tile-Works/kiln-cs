@@ -207,3 +207,14 @@
 - No physics yet. Not modelled: top-open timing, cooling fans, special damper rules at the
   interconnecting flues (not written down in the source).
 - 387 tests pass.
+
+## 2026-11-17 — Build stage G: kiln flow network (stage 2.2)
+- New `sim/kiln/network.py` and `sim/kiln/params.py`: the ring as a chain of 60 units cut at the paper
+  seal; openings along the tunnel (tile setting), in from the room (doors, leaks, portholes) and out
+  through lifted dampers (cone-in-ring area). Solved by linearising the square-root law (tridiagonal).
+- The whole kiln reduces to one equivalent opening that does not depend on suction. With 1.6 m2 per
+  loaded unit it is 0.18 m2, the value stage 1 needed. `couple_to_exhaust` joins it to the stage 1
+  fan, plate and chimney: P1 121-125 Pa, P2 89-92 Pa at 380 rpm wherever the fire is.
+- Gas temperatures are a nominal profile by zone until stage H supplies real ones.
+- Ignored: buoyancy inside the kiln, pressure loss along the main flue; handling units are treated as empty.
+- 411 tests pass.
