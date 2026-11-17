@@ -25,7 +25,7 @@ from utils import AttrDict              # fan-ctrl
 
 MAX_PLANT_STEP_S = 0.25      # plant is integrated in steps no longer than this
 CHANNELS = ("p1", "p2", "t")
-DEFAULT_COMMAND = "PID 4.5"
+DEFAULT_COMMAND = "PID 3.6"
 
 
 class ClosedLoop:
@@ -47,6 +47,7 @@ class ClosedLoop:
         self.drive.set_rpm(start_rpm)
         self.command = Command("OFF")
         self._last_mode: str | None = None
+        self._natural_guess: float | None = None   # warm start for the "draft alone" solve
         self.set_command(command)
 
     # ------------------------------------------------------------ inputs
@@ -179,10 +180,11 @@ class ClosedLoop:
 
         counts = {"p1": self.transmitters["p1"].sample(op.p1_pa, dt),
                   "p2": self.transmitters["p2"].sample(op.p2_pa, dt),
-                  "t": self.transmitters["t"].sample(op.t_plate_c, dt)}
+                  "t": self.transmitters["t"].sample(op.t_gas_c, dt)}
         status, flow_estimate, pid_raw = self._control(counts)
 
-        natural = solve_steady(p, 0.0, self.plant.t_gas_c, t_amb)
+        natural = solve_steady(p, 0.0, self.plant.t_gas_c, t_amb, guess=self._natural_guess)
+        self._natural_guess = natural.mass_flow_kg_s
         return {
             "time_s": self.time_s,
             "status": status,
@@ -195,8 +197,10 @@ class ClosedLoop:
             "rpm_actual": self.plant.rpm,
             "pid_output": pid_raw,
             "p1_pa": op.p1_pa, "p2_pa": op.p2_pa, "plate_dp_pa": op.plate_dp_pa,
+            "p_fan_in_pa": op.p_fan_in_pa, "p_fan_out_pa": op.p_fan_out_pa,
+            "p_chimney_base_pa": op.p_chimney_base_pa,
             "draft_pa": op.draft_pa, "fan_dp_pa": op.fan_dp_pa,
-            "t_gas_c": op.t_plate_c, "t_kiln_c": op.t_kiln_c, "t_ambient_c": t_amb,
+            "t_gas_c": op.t_gas_c, "t_ambient_c": t_amb,
             "t_chimney_mean_c": op.t_chimney_mean_c, "t_chimney_top_c": op.t_chimney_top_c,
             "counts_p1": counts["p1"], "counts_p2": counts["p2"], "counts_t": counts["t"],
             "stalled": op.stalled,

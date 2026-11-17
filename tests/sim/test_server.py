@@ -47,6 +47,12 @@ def test_slider_change_is_validated_and_applied(client):
     assert c.post("/api/params", json={"nope": 1}).status_code == 400
 
 
+@pytest.mark.parametrize("removed", ["k_reuse", "reuse_extraction", "chimney_diameter_m", "k_upstream"])
+def test_removed_parameters_are_rejected(client, removed):
+    c, _ = client
+    assert c.post("/api/params", json={removed: 1}).status_code == 400
+
+
 def test_reset_to_defaults(client):
     c, runner = client
     c.post("/api/params", json={"kp": 4.0})
@@ -56,7 +62,7 @@ def test_reset_to_defaults(client):
 
 def test_command_modes(client):
     c, runner = client
-    c.post("/api/command", json={"text": "MAN 700"})
+    c.post("/api/command", json={"text": "MAN 300"})
     runner.advance(2)
     assert c.get("/api/state").get_json()["records"][-1]["mode"] == "MAN"
     c.post("/api/command", json={"text": "garbage"})
@@ -88,11 +94,11 @@ def test_pause_run_speed_and_reset(client):
 def test_reset_keeps_slider_values_and_command(client):
     c, runner = client
     c.post("/api/params", json={"t_gas_c": 300})
-    c.post("/api/command", json={"text": "PID 5.0"})
+    c.post("/api/command", json={"text": "PID 4.0"})
     c.post("/api/control", json={"action": "reset"})
     assert runner.loop.p.t_gas_c == 300
     runner.advance(1)
-    assert runner.loop.command.value == 5.0
+    assert runner.loop.command.value == 4.0
 
 
 def test_background_thread_advances_the_simulation():

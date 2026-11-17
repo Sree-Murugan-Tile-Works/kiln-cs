@@ -137,3 +137,14 @@
   the legacy formula figures (31.0 or 50.9 against 40.33 on screen, not 1608 or 65).
 - Read all of `sim/`, `tests/sim/` and the legacy formula defaults in preparation.
 - Not done: no stage is built. Work stopped at a usage limit before stage A started.
+
+## 2026-11-17 — Build stage A: new exhaust-path physics
+- `sim/plant.py` rewritten: kiln -> fan -> plate -> restriction -> chimney; heat reuse removed;
+  tapered square chimney solved in 20 slices; outside air pressure falls with height; kiln gauge
+  pressure now drives flow; full pressure walk and every loss reported.
+- `sim/gas.py`: barometric pressure and air viscosity. `sim/params.py`: new parameter set, with
+  kiln and restriction resistance written as equivalent free areas.
+- Default case gives P1 121 Pa and P2 88 Pa at 380 rpm and 130.4 degC (site: 119.2 and 87).
+- `sim/loop.py`, `sim/analysis.py` and tests adapted; chimney taper study added. 303 tests pass.
+- Known gaps until later stages: `python -m sim.report` does not run (stage E); the GUI drawing
+  still shows the plate before the fan (stage D); transmitters are still two-sided (stage B).

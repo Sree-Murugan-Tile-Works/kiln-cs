@@ -240,7 +240,7 @@ function updateReadouts(record) {
   $("k-pid").textContent = record.pid_output === null ? "–" : fmt(Math.max(0, Math.min(1, record.pid_output)) * 100, 0);
 
   const text = {
-    "s-tgas": fmt(record.t_kiln_c, 0), "s-p1": fmt(record.p1_pa, 1), "s-p2": fmt(record.p2_pa, 1),
+    "s-tgas": fmt(record.t_gas_c, 0), "s-p1": fmt(record.p1_pa, 1), "s-p2": fmt(record.p2_pa, 1),
     "s-dp": fmt(record.plate_dp_pa, 1), "s-q": fmt(record.flow_true_m3s, 2), "s-rpm": fmt(record.rpm_actual, 0),
     "s-fandp": fmt(record.fan_dp_pa, 0), "s-draft": fmt(record.draft_pa, 0), "s-tchim": fmt(record.t_chimney_mean_c, 0),
     "s-ttop": fmt(record.t_chimney_top_c, 0), "s-tamb": fmt(record.t_ambient_c, 1), "s-tfan": fmt(record.t_gas_c, 0),
@@ -273,8 +273,7 @@ const CHARTS = [
     { key: "draft_pa", label: "Natural draft", color: "--c-green" },
     { key: "fan_dp_pa", label: "Fan adds", color: "--c-orange" } ] },
   { id: "temp", title: "Temperatures", unit: "°C", series: [
-    { key: "t_kiln_c", label: "Kiln gas (before reuse)", color: "--c-red" },
-    { key: "t_gas_c", label: "Gas at plate (after reuse)", color: "--c-magenta" },
+    { key: "t_gas_c", label: "Exhaust gas at the plate", color: "--c-magenta" },
     { key: "t_chimney_mean_c", label: "Chimney gas (mean)", color: "--c-orange" },
     { key: "t_chimney_top_c", label: "Chimney top", color: "--c-teal", dash: true },
     { key: "t_ambient_c", label: "Outside air", color: "--c-blue" } ] },

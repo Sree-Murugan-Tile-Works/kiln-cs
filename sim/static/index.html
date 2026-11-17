@@ -36,12 +36,12 @@
         </div>
       </div>
       <div class="ctl-group grow" id="grp-sp">
-        <label class="ctl-label" for="sp">Flow setpoint <b id="sp-val">4.5</b> m³/s</label>
-        <input type="range" id="sp" min="0.5" max="9" step="0.1" value="4.5">
+        <label class="ctl-label" for="sp">Flow setpoint <b id="sp-val">3.6</b> m³/s</label>
+        <input type="range" id="sp" min="1" max="6" step="0.1" value="3.6">
       </div>
       <div class="ctl-group grow" id="grp-man" hidden>
-        <label class="ctl-label" for="man">Manual speed <b id="man-val">800</b> rpm</label>
-        <input type="range" id="man" min="0" max="1800" step="10" value="800">
+        <label class="ctl-label" for="man">Manual speed <b id="man-val">380</b> rpm</label>
+        <input type="range" id="man" min="0" max="600" step="10" value="380">
       </div>
       <div class="ctl-group">
         <span class="ctl-label">Run</span>
@@ -64,24 +64,24 @@
     </section>
 
     <section class="panel schematic" aria-label="Process schematic">
-      <svg id="svg" viewBox="0 0 900 250" role="img" aria-label="Kiln, orifice plate, heat reuse, fan and chimney">
+      <svg id="svg" viewBox="0 0 900 250" role="img" aria-label="Kiln, fan, orifice plate and chimney (drawing is replaced in build stage D)">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M0,0 L10,5 L0,10 z" class="arrow-head"/>
           </marker>
         </defs>
-        <!-- kiln: firing zone + internal heat-reuse tunnels, both BEFORE the plate -->
+        <!-- NOTE: this drawing still shows the plate before the fan; build stage D replaces it -->
         <rect x="14" y="100" width="290" height="116" rx="8" class="box"/>
         <path d="M130 100 V216" class="tap"/>
         <text x="72" y="126" class="label" text-anchor="middle">Kiln</text>
         <text x="72" y="152" class="num" text-anchor="middle"><tspan id="s-tgas">–</tspan> °C</text>
-        <text x="72" y="172" class="sub" text-anchor="middle">firing-zone gas</text>
+        <text x="72" y="172" class="sub" text-anchor="middle">exhaust gas</text>
         <text x="72" y="198" class="sub" text-anchor="middle">kiln <tspan id="s-kiln">0</tspan> Pa</text>
         <rect x="142" y="112" width="150" height="92" rx="6" class="box dashed"/>
-        <text x="217" y="136" class="label" text-anchor="middle">Heat-reuse tunnels</text>
+        <text x="217" y="136" class="label" text-anchor="middle">Flue to the fan</text>
         <text x="217" y="160" class="num" text-anchor="middle"><tspan id="s-tfan">–</tspan> °C</text>
-        <text x="217" y="180" class="sub" text-anchor="middle">gas leaving the kiln</text>
-        <text x="217" y="196" class="sub" text-anchor="middle">(what the plate sees)</text>
+        <text x="217" y="180" class="sub" text-anchor="middle">same gas</text>
+        <text x="217" y="196" class="sub" text-anchor="middle">(what the fan sees)</text>
         <!-- duct -->
         <path d="M304 160 H740" class="duct"/>
         <path id="flowline" d="M304 160 H740" class="flowline" marker-end="url(#arrow)"/>

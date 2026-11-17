@@ -12,9 +12,9 @@ from sim.loop import ClosedLoop
 from sim.params import SPEC_BY_NAME, make_params, params_to_dict
 from sim.plant import operating_point, solve_steady
 
-TARGET_FLOW = 4.5          # m3/s, the default setpoint
-REFERENCE_RPM = 900.0      # fan speed used for "flow at a fixed fan speed" comparisons
-RPM_SEARCH_MAX = 3000.0
+TARGET_FLOW = 3.6          # m3/s, the default setpoint
+REFERENCE_RPM = 380.0      # fan speed used for "flow at a fixed fan speed" comparisons
+RPM_SEARCH_MAX = 1500.0
 TRAVEL_FRACTION = 0.10     # tornado: move each slider by +/-10 % of its full travel
 SETTLE_BAND = 0.02         # closed loop: settled when within 2 % of the target
 WINDUP_HORIZON_S = 7200    # how long to wait for a wound-up integral to unwind
@@ -22,10 +22,11 @@ WINDUP_HORIZON_S = 7200    # how long to wait for a wound-up integral to unwind
 # Parameters that change the steady-state physics. Dynamics, instrument and controller parameters are
 # covered by their own analyses (they do not move the steady operating point).
 PHYSICAL_PARAMS = [
-    "t_amb_c", "p_atm_pa", "t_gas_c", "kiln_gauge_pa", "gas_molar_mass_g_mol", "gas_cp_j_kg_k",
-    "k_reuse", "reuse_extraction", "duct_diameter_m", "k_upstream", "plate_beta", "plate_cd",
-    "fan_rated_rpm", "fan_shutoff_dp_pa", "fan_max_flow_m3s",
-    "chimney_height_m", "chimney_diameter_m", "chimney_friction", "chimney_u_w_m2k",
+    "t_amb_c", "p_atm_pa", "t_gas_c", "kiln_gauge_pa", "kiln_free_area_m2", "gas_molar_mass_g_mol",
+    "gas_cp_j_kg_k", "duct_diameter_m", "k_fan_to_plate", "restriction_free_area_m2", "plate_beta",
+    "plate_cd", "fan_rated_rpm", "fan_shutoff_dp_pa", "fan_max_flow_m3s",
+    "chimney_height_m", "chimney_bottom_side_m", "chimney_top_side_m", "chimney_friction",
+    "chimney_u_w_m2k",
 ]
 
 
@@ -60,22 +61,23 @@ def metrics(p, target: float = TARGET_FLOW) -> dict:
     natural = solve_steady(p, 0.0, p.t_gas_c, p.t_amb_c)
     fixed = solve_steady(p, REFERENCE_RPM, p.t_gas_c, p.t_amb_c)
     return {
-        "q_natural": natural.q_m3_s, "draft_pa": natural.draft_pa, "t_plate_c": natural.t_plate_c,
+        "q_natural": natural.q_m3_s, "draft_pa": natural.draft_pa,
         "q_fixed_rpm": fixed.q_m3_s, "plate_dp_fixed": fixed.plate_dp_pa, "p1_fixed": fixed.p1_pa,
         "p2_fixed": fixed.p2_pa, "rpm_needed": rpm_for_flow(p, target),
     }
 
 
 # --------------------------------------------------------------------------- baseline
-def baseline_sweep(base: dict, rpms=(0, 200, 400, 600, 800, 1000, 1200, 1500)) -> list[dict]:
+def baseline_sweep(base: dict, rpms=(0, 150, 220, 260, 300, 340, 380, 420, 450)) -> list[dict]:
     p = build(base)
     rows = []
     for rpm in rpms:
         op = solve_steady(p, rpm, p.t_gas_c, p.t_amb_c)
         rows.append({"rpm": rpm, "q": op.q_m3_s, "draft": op.draft_pa, "fan_dp": op.fan_dp_pa,
                      "plate_dp": op.plate_dp_pa, "p1": op.p1_pa, "p2": op.p2_pa,
-                     "t_plate": op.t_plate_c, "t_chim_mean": op.t_chimney_mean_c,
-                     "p2_range_use": abs(op.p2_pa) / p.p_range_pa})
+                     "p_fan_in": op.p_fan_in_pa, "t_chim_mean": op.t_chimney_mean_c,
+                     "t_chim_top": op.t_chimney_top_c,
+                     "p1_range_use": abs(op.p1_pa) / p.p_range_pa})
     return rows
 
 
@@ -116,7 +118,7 @@ def _swing(row: dict, key: str) -> float:
 
 
 # --------------------------------------------------------------------------- interactions
-def fan_effect_vs_draft(base: dict, ambients=(-5, 15, 35), heights=(15, 30, 45)) -> list[dict]:
+def fan_effect_vs_draft(base: dict, ambients=(10, 25, 40), heights=(20, 38.1, 55)) -> list[dict]:
     """How much flow the fan adds (0 -> reference rpm) depending on the natural draft already present."""
     rows = []
     for t_amb in ambients:
@@ -143,16 +145,16 @@ def envelope_vs_ambient(base: dict, ambients) -> list[dict]:
     return rows
 
 
-def reuse_interaction(base: dict, extractions=(0.0, 0.2, 0.4), losses=(0, 3, 9)) -> list[dict]:
+def chimney_taper_study(base: dict, top_sides=(0.5, 0.7, 0.914, 1.2, 1.524)) -> list[dict]:
+    """How the size of the chimney top changes the exit velocity, the exit loss and the flow."""
     rows = []
-    for ext in extractions:
-        for loss in losses:
-            p = build(base, reuse_extraction=ext, k_reuse=loss)
-            op = solve_steady(p, REFERENCE_RPM, p.t_gas_c, p.t_amb_c)
-            nat = solve_steady(p, 0.0, p.t_gas_c, p.t_amb_c)
-            rows.append({"extraction": ext, "k_reuse": loss, "t_plate": op.t_plate_c, "q_natural": nat.q_m3_s,
-                         "q_fixed_rpm": op.q_m3_s, "p1": op.p1_pa, "p2": op.p2_pa, "plate_dp": op.plate_dp_pa,
-                         "rpm_needed": rpm_for_flow(p)})
+    for top in top_sides:
+        p = build(base, chimney_top_side_m=top)
+        nat = solve_steady(p, 0.0, p.t_gas_c, p.t_amb_c)
+        op = solve_steady(p, REFERENCE_RPM, p.t_gas_c, p.t_amb_c)
+        rows.append({"top_side": top, "q_natural": nat.q_m3_s, "q_fixed_rpm": op.q_m3_s,
+                     "loss_exit": op.loss_exit_pa, "loss_friction": op.loss_chimney_friction_pa,
+                     "p2": op.p2_pa, "rpm_needed": rpm_for_flow(p)})
     return rows
 
 
@@ -164,13 +166,13 @@ def plate_beta_study(base: dict, betas=(0.4, 0.5, 0.6, 0.7)) -> list[dict]:
         rpm = rpm_for_flow(p)
         op = solve_steady(p, rpm or 0.0, p.t_gas_c, p.t_amb_c)
         dp_counts = op.plate_dp_pa / (2 * p.p_range_pa) * 6000
-        rows.append({"beta": beta, "rpm_needed": rpm, "plate_dp": op.plate_dp_pa, "p2": op.p2_pa,
-                     "p2_range_use": abs(op.p2_pa) / p.p_range_pa, "dp_counts": dp_counts,
+        rows.append({"beta": beta, "rpm_needed": rpm, "plate_dp": op.plate_dp_pa, "p1": op.p1_pa,
+                     "p1_range_use": abs(op.p1_pa) / p.p_range_pa, "dp_counts": dp_counts,
                      "pct_per_count": 100.0 / (2 * dp_counts) if dp_counts > 0 else math.inf})
     return rows
 
 
-def flow_resolution_vs_flow(base: dict, flows=(1.5, 2.5, 3.5, 4.5, 5.5)) -> list[dict]:
+def flow_resolution_vs_flow(base: dict, flows=(1.5, 2.0, 2.5, 3.0, 3.5, 4.0)) -> list[dict]:
     """
     The square-root law: the plate dP (and so the counts the PLC sees) falls with flow squared, so one
     PLC count is a bigger slice of the flow at low flow. ``holdable`` says whether the fan/draft can
@@ -201,7 +203,7 @@ def true_flow_when_controller_holds_setpoint(base: dict, target: float = TARGET_
     def estimate(rpm: float) -> tuple[float, float]:
         op = solve_steady(p, rpm, p.t_gas_c, p.t_amb_c)
         est = estimate_flow(p, op.p1_pa + offsets["p1_offset"], op.p2_pa + offsets["p2_offset"],
-                            op.t_plate_c + offsets["t_offset"])
+                            op.t_gas_c + offsets["t_offset"])
         return est, op.q_m3_s
 
     lo, hi = 0.0, RPM_SEARCH_MAX
@@ -216,7 +218,7 @@ def estimate_error_table(base: dict) -> dict:
     cd_table = {(cd, m): true_flow_when_controller_holds_setpoint(base, est_cd_error_pct=cd, est_molar_mass_g_mol=m)
                 for cd in cd_errors for m in molar_masses}
     drift = {name: {off: true_flow_when_controller_holds_setpoint(base, **{name: off}) for off in offs}
-             for name, offs in (("p1_offset", (-30, -10, 10, 30)), ("p2_offset", (-30, -10, 10, 30)),
+             for name, offs in (("p1_offset", (-10, -5, 5, 10)), ("p2_offset", (-10, -5, 5, 10)),
                                 ("t_offset", (-30, -10, 10, 30)))}
     return {"cd_errors": cd_errors, "molar_masses": molar_masses, "cd_table": cd_table, "drift": drift}
 
@@ -250,7 +252,7 @@ def step_metrics(records: list[dict], t_step: float, start: float, target: float
             "settle_s": math.inf if never else settle}
 
 
-def pid_tuning_grid(base: dict, kps=(0.5, 1.5, 3.0), kis=(0.05, 0.2, 0.5), start=4.0, target=5.0) -> list[dict]:
+def pid_tuning_grid(base: dict, kps=(0.5, 1.5, 3.0), kis=(0.05, 0.2, 0.5), start=3.2, target=3.8) -> list[dict]:
     rows = []
     for kp in kps:
         for ki in kis:
@@ -262,7 +264,7 @@ def pid_tuning_grid(base: dict, kps=(0.5, 1.5, 3.0), kis=(0.05, 0.2, 0.5), start
     return rows
 
 
-def lag_study(base: dict, start=4.0, target=5.0) -> list[dict]:
+def lag_study(base: dict, start=3.2, target=3.8) -> list[dict]:
     """How plant/instrument/scan time constants limit the loop, at the default gains."""
     rows = []
     for name, values in (("flow_tau_s", (1.0, 3.0, 10.0, 30.0)), ("motor_tau_s", (0.5, 2.0, 8.0, 20.0)),
@@ -276,7 +278,7 @@ def lag_study(base: dict, start=4.0, target=5.0) -> list[dict]:
     return rows
 
 
-def disturbance_response(base: dict, t_amb_after: float = 5.0, target: float = TARGET_FLOW) -> dict:
+def disturbance_response(base: dict, t_amb_after: float = 15.0, target: float = TARGET_FLOW) -> dict:
     """A cold front hits while the loop holds the setpoint: how far does the true flow move, and how fast does it recover."""
     loop = ClosedLoop(_quiet(base), f"PID {target}")
     _run(loop, 300)
@@ -308,7 +310,7 @@ def windup_recovery(base: dict) -> dict:
     return result
 
 
-def step_records(base: dict, kp: float, ki: float, start=4.0, target=5.0, hold_s=300, run_s=600) -> list[dict]:
+def step_records(base: dict, kp: float, ki: float, start=3.2, target=3.8, hold_s=300, run_s=600) -> list[dict]:
     """Time series of a setpoint step, for plotting. The step happens at ``hold_s``."""
     loop = ClosedLoop(_quiet(base, kp=kp, ki=ki), f"PID {start}")
     _run(loop, hold_s)
