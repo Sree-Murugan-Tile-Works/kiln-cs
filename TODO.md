@@ -81,3 +81,5 @@
 - [ ] Check the kiln page (`/kiln`) and the exhaust page at phone width in a real browser; headless screenshots at 420 px looked clipped and could not be trusted
 - [ ] Kiln page: offer a flow setpoint (fan speed solved to hold it) as well as a fixed fan speed; join the kiln model to the stage 1 PID loop for control studies
 - [ ] Kiln model: decide whether tiles should also dry below 100 degC (pre-drying "sweating") and whether the handling zone needs its own cooling model (brick there now loses heat only through the wall)
+- [ ] Kiln model: make handling-zone rooms cool realistically (air through open doors, unloading time) before tiles are reloaded; the model leaves them at 75-150 degC
+- [ ] Kiln model: replace the tuned wall loss (45 % of fuel heat) with a value from the insulation data or site measurements

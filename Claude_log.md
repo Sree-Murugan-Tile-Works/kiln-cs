@@ -238,3 +238,22 @@
 - Checked by eye with headless Edge screenshots: dark theme at 1500 px (default run, and with a held damper, an early door and skipped charges active: the dip at the opened door and the fuel gap are visible), light theme at 1500 px after 3 simulated days (fire moved to the west battery), and the exhaust page with its new link. Fixed after looking: ring-end flues cut off, water bar hiding unit numbers in the bottom row, axis title overlap, upset colour too close to the damper colour.
 - Not checked: phone width (the 420 px headless shot looked clipped beyond what the CSS explains, so it was not trusted); real browsers; keyboard use. 7 new route tests in `tests/sim/test_kiln_server.py`; 461 tests pass.
 - Left running: none of my test servers (ports 5003-5005 were started under `timeout` and stop by themselves). Port 5002 is still held by the earlier server.
+
+## 2026-11-17 — Final review of build stages H and I
+- Stages H and I were built by a delegated Opus agent (owner's request); this entry is the review.
+- Checked: commits touch only `sim/`, `tests/sim/` and the tracking documents (nothing in `fan-ctrl/` or
+  `dashboard/`); 461 tests pass; `sim/kiln/thermal.py` and `sim/kiln/kilnsim.py` read through; an
+  independent one-week run; one screenshot of `/kiln` after about a simulated day.
+- Independent run (380 rpm, 300 s step): hottest unit moves 9 units per day and sits 8-9 units behind
+  the fire front at about 915 degC; tile water is gone about 9 units ahead of the fire; exhaust
+  110-140 degC; 3.3 kg/s to the fan; P1 122-147 Pa and P2 89-114 Pa as the fire goes round; energy
+  account closes to rounding. Fuel heat goes 45 % to wall loss, 34 % to exhaust, 12 % to drying,
+  4 % out with fired tiles, 6 % still warming the kiln after a week.
+- Weak points found (not fixed, added to TODO):
+  - Handling-zone rooms stay at 75-150 degC and green tiles are loaded into them, because brick there
+    cools only through the wall. Real rooms must be cool enough to work in.
+  - Wall loss (45 % of fuel) is the tuned sink that makes the peak come out right; it is not a measurement.
+  - The fan sees the previous step's exhaust temperature and air flow only (no fuel or vapour mass).
+  - Fixed fan speed only: the kiln model is not yet connected to the PID loop.
+  - One simulated week took 21 s here (the agent measured 8.8 s); the test suite now takes about 75 s.
+- `.claude/CLAUDE.md` test count corrected to 461.
