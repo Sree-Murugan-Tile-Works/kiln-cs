@@ -48,7 +48,8 @@ Status on 2026-11-17:
 | C | done | `sim/profile.py` |
 | D | done | Checked by headless screenshots at default, 100 rpm and 450 rpm. Not checked by eye: true-scale view, light theme, phone width |
 | E | done | `project/simulation-report.md` regenerated |
-| F to J | not started | |
+| F | done | `sim/kiln/layout.py`, `sim/kiln/schedule.py` |
+| G to J | not started | |
 
 ---
 

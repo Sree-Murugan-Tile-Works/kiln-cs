@@ -197,3 +197,13 @@
 - `.claude/CLAUDE.md` test count (352), stage 1 plan and build plan status updated.
 - Stage 1 (stages A-E) is complete. Stage 2 (F-J) not started.
 - Left running: the simulation server started for the GUI check on port 5002 (stopping it was blocked).
+
+## 2026-11-17 — Build stage F: kiln ring and moving schedule (stage 2.1)
+- New package `sim/kiln/`: `layout.py` (60 fireboxes, 28 doors, 30 dampers, two interconnecting flues
+  without tiles) and `schedule.py` (the "train": firing, pre-heating, damper, pre-drying, cooling and
+  handling zones; damper raise/hold/lower cycle; door stages; paper seal; charge number).
+- With the "4.5 rooms/day" schedule: 15 fireboxes firing, 4-5 dampers lifted, combined lift roughly
+  constant, one round in 6.67 days. Invalid schedules are rejected.
+- No physics yet. Not modelled: top-open timing, cooling fans, special damper rules at the
+  interconnecting flues (not written down in the source).
+- 387 tests pass.
