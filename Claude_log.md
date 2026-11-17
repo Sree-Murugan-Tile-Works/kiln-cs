@@ -268,3 +268,22 @@
   theme be checked by eye, which was outstanding from stage D. Both look correct.
 - Kiln screenshots were taken from a separate server instance so the owner's open session was not disturbed.
 - Still not checked: phone-width windows.
+
+## 2026-11-17 — PID and fan edge-case report
+- Owner asked to run the simulation and report on the PID and fan side: edge cases, what the existing control loop
+  implies, and improvements in engineering units. Read the code first, listed the files, got the go-ahead, then wrote.
+- Ran `pytest tests/sim` (337 passed before the new tests; 37 added) and a new campaign, `sim/pid_edge_cases.py`.
+  It compares three controllers on the same plant: "prod" (a re-implementation of `main.py`'s logic around the real
+  `PIDController`/`FanDrive`/`Command`), "sim" (the GUI loop, which patches the PID from outside) and "eng" (a
+  prototype PID in engineering units, rpm out, m3/s in).
+- Added `sim/pid_edge_cases.py`, `tests/sim/test_pid_edge_cases.py` (37 tests, about 2 min, many pin today's bugs and
+  are marked "today"), `project/pid-fan-report.md` and three figures in `project/pid-fan-report/`.
+- Findings, most serious first: the daemon raises `AttributeError` on the first PID scan (`plc.FlowData.q_avg` is a
+  class attribute that does not exist); `PID <sv>` never sets the setpoint; the PID controls on the legacy value, which
+  falls with fan speed above ~290 rpm so the loop has the wrong sign at the site operating point (runs to 450 or
+  220 rpm); no anti-windup (1740 s of overspeed after 600 s of saturation); NaN becomes 450 rpm; empty/None command
+  kills the DAQ thread; gain edits, MAN->PID and sensor-fault recovery kick the fan; OFF = 0 rpm.
+- Not wrong: the happy-path tuning (no overshoot, ~50 s settle), scan interval 0.2-5 s, and plant gain varies only
+  17 %, so gain scheduling is not needed. An earlier TODO note says ~19 min windup recovery; this campaign measures
+  29 min for a different scenario (setpoint 6.0 for 600 s); both are the same effect.
+- No file in `fan-ctrl/` was changed. Nothing committed. Open decision for the owner: what the PID should control on.

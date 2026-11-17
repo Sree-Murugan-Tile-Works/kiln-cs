@@ -84,3 +84,14 @@
 - [ ] Kiln model: make handling-zone rooms cool realistically (air through open doors, unloading time) before tiles are reloaded; the model leaves them at 75-150 degC
 - [ ] Kiln model: replace the tuned wall loss (45 % of fuel heat) with a value from the insulation data or site measurements
 - [ ] Review `project/simulation-walkthrough.md` with the team and carry out the site actions in its section 6 (speed step test first)
+- [x] PID and fan edge-case report — `project/pid-fan-report.md`, `sim/pid_edge_cases.py`, `tests/sim/test_pid_edge_cases.py` (done 2026-11-17, not yet committed)
+- [ ] P0 bug: `fan-ctrl/main.py:85` reads `plc.FlowData.q_avg` (class attribute, raises AttributeError); should be `kiln_plc.data.q_avg`
+- [ ] P0 bug: the PID setpoint never comes from `PID <sv>` (`cmd.value` is used only for MAN); decide how `config.set_point` and the command relate
+- [ ] P0: `main.parse_cmd` only catches `ValueError`; `Command("")`/`Command(None)` raise `IndexError`/`AttributeError` and kill the DAQ thread; `Command` accepts `PID nan`, `PID inf`, `PID -5`, trailing junk
+- [ ] P0: `FanDrive`/`PIDController` turn NaN into maximum speed (450 rpm) / permanent NaN; add input guards that fall back to the safe speed
+- [ ] P0: OFF commands 0 rpm in `main.py`; the architecture says the Pi never stops the fan
+- [ ] Decide the controlled variable: the legacy `calc_pv` value is not monotonic in fan speed (peaks near 290 rpm), so a PID on it has the wrong sign above that; options are m3/s from plate ΔP, ΔP itself, or the legacy value (see `project/pid-fan-report.md` §3.5)
+- [ ] PID robustness: output limits, back-calculation anti-windup (1740 s recovery today in the PID-fan campaign), integral stored in rpm (gain edits jump the fan 78 rpm), bumpless transfer, `dt` guard, derivative on filtered measurement; apply to the Pi-side PID or use as the checklist for the PLC PIDAT block
+- [ ] Resynchronise `main.daq_pid` `next_time` after a stall (back-to-back scans give a tiny dt and a derivative spike)
+- [ ] Config defaults: `pid_min_rpm`/`motor_min_rpm` default to 0 (resonance band reachable), `kp = ki = kd = 0`, `set_point` in legacy units; make the defaults safe
+- [ ] Re-check hunting below 2.7 m3/s with sensor noise on (not covered in the PID-fan campaign)
