@@ -103,13 +103,13 @@ class _LossCoefficients:
     fan_slope: float         # c_f in the fan curve, Pa / (m3/s)^2
 
 
-def _loss_coefficients(p) -> _LossCoefficients:
+def _loss_coefficients(p, kiln_area_factor: float = 1.0) -> _LossCoefficients:
     a_duct = _circle_area(p.duct_diameter_m)
     a_bore = _circle_area(p.plate_beta * p.duct_diameter_m)
     k_plate_full = (1.0 - p.plate_beta ** 4) / (2.0 * p.plate_cd ** 2 * a_bore ** 2)
     permanent_fraction = 1.0 - p.plate_beta ** PERMANENT_LOSS_EXPONENT
     return _LossCoefficients(
-        k_kiln=1.0 / (2.0 * p.kiln_free_area_m2 ** 2),
+        k_kiln=1.0 / (2.0 * (p.kiln_free_area_m2 * kiln_area_factor) ** 2),
         k_fan_to_plate=p.k_fan_to_plate / (2.0 * a_duct ** 2),
         k_plate_full=k_plate_full,
         k_plate_loop=k_plate_full * permanent_fraction,
@@ -181,9 +181,14 @@ def chimney_state(p, mass_flow: float, t_base_c: float, t_amb_c: float,
 
 
 # --------------------------------------------------------------------------- pressure balance
-def operating_point(p, mass_flow: float, rpm: float, t_gas_c: float, t_amb_c: float) -> OperatingPoint:
-    """Evaluate pressures, temperatures and draft for a given mass flow (steady or transient)."""
-    k = _loss_coefficients(p)
+def operating_point(p, mass_flow: float, rpm: float, t_gas_c: float, t_amb_c: float,
+                    kiln_area_factor: float = 1.0) -> OperatingPoint:
+    """
+    Evaluate pressures, temperatures and draft for a given mass flow (steady or transient).
+
+    ``kiln_area_factor`` scales the kiln free area for this instant (damper cycle, fuel charge).
+    """
+    k = _loss_coefficients(p, kiln_area_factor)
     rho = density(p.p_atm_pa, t_gas_c, p.gas_molar_mass_g_mol)
     chimney = chimney_state(p, mass_flow, t_gas_c, t_amb_c)
     m2 = mass_flow ** 2
@@ -216,14 +221,15 @@ def operating_point(p, mass_flow: float, rpm: float, t_gas_c: float, t_amb_c: fl
         stalled=mass_flow <= 0.0)
 
 
-def solve_steady(p, rpm: float, t_gas_c: float, t_amb_c: float, guess: float | None = None) -> OperatingPoint:
+def solve_steady(p, rpm: float, t_gas_c: float, t_amb_c: float, guess: float | None = None,
+                 kiln_area_factor: float = 1.0) -> OperatingPoint:
     """
     Steady-state flow for a fixed fan speed.
 
     ``guess`` is an optional starting mass flow (the previous answer); it only makes the solve
     faster, the result is the same.
     """
-    k = _loss_coefficients(p)
+    k = _loss_coefficients(p, kiln_area_factor)
     rho = density(p.p_atm_pa, t_gas_c, p.gas_molar_mass_g_mol)
     fan_gain = (rho / FAN_REF_DENSITY) * p.fan_shutoff_dp_pa * (rpm / p.fan_rated_rpm) ** 2
     fan_loss_term = k.fan_slope / (FAN_REF_DENSITY * rho)   # fan curve's Q^2 term, in m_dot^2 form
@@ -240,7 +246,22 @@ def solve_steady(p, rpm: float, t_gas_c: float, t_amb_c: float, guess: float | N
             mass_flow = target
             break
         mass_flow += RELAXATION * (target - mass_flow)   # damping keeps the iteration from oscillating
-    return operating_point(p, mass_flow, rpm, t_gas_c, t_amb_c)
+    return operating_point(p, mass_flow, rpm, t_gas_c, t_amb_c, kiln_area_factor)
+
+
+def kiln_area_factor(p, time_s: float) -> float:
+    """
+    How open the kiln is at a given time, as a multiple of ``kiln_free_area_m2``.
+
+    Two operator actions change the resistance the fan pulls against:
+      * the damper cycle: a slow swing as dampers are raised and lowered;
+      * fuel charging: every ``charge_period_s`` the portholes open for ``charge_open_s`` and let
+        extra air in, which the fan sees as a brief drop in resistance.
+    """
+    factor = 1.0 + p.kiln_area_swing_pct / 100.0 * math.sin(2.0 * math.pi * time_s / p.kiln_area_period_s)
+    if p.charge_open_pct > 0.0 and time_s % p.charge_period_s < p.charge_open_s:
+        factor += p.charge_open_pct / 100.0
+    return factor
 
 
 def environment(p, time_s: float) -> tuple[float, float]:
@@ -265,13 +286,15 @@ class Plant:
         """Swap parameters at run time (slider moved). State is kept, so the plant responds smoothly."""
         self.p = p
 
-    def step(self, dt: float, rpm_command: float, t_gas_target_c: float, t_amb_c: float) -> OperatingPoint:
+    def step(self, dt: float, rpm_command: float, t_gas_target_c: float, t_amb_c: float,
+             kiln_area_factor: float = 1.0) -> OperatingPoint:
         p = self.p
         max_change = p.drive_ramp_rpm_s * dt
         self._rpm_reference += max(-max_change, min(max_change, rpm_command - self._rpm_reference))
         self.rpm += (self._rpm_reference - self.rpm) * (1.0 - math.exp(-dt / p.motor_tau_s))
         self.t_gas_c += (t_gas_target_c - self.t_gas_c) * (1.0 - math.exp(-dt / p.gas_temp_tau_s))
-        target = solve_steady(p, self.rpm, self.t_gas_c, t_amb_c, guess=self._steady_guess).mass_flow_kg_s
+        target = solve_steady(p, self.rpm, self.t_gas_c, t_amb_c, guess=self._steady_guess,
+                              kiln_area_factor=kiln_area_factor).mass_flow_kg_s
         self._steady_guess = target
         self.mass_flow += (target - self.mass_flow) * (1.0 - math.exp(-dt / p.flow_tau_s))
-        return operating_point(p, self.mass_flow, self.rpm, self.t_gas_c, t_amb_c)
+        return operating_point(p, self.mass_flow, self.rpm, self.t_gas_c, t_amb_c, kiln_area_factor)

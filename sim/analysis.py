@@ -7,7 +7,7 @@ parameter values are the placeholders in ``sim.params``.
 """
 import math
 
-from sim.instruments import estimate_flow
+from sim.instruments import estimate_flow, legacy_flow
 from sim.loop import ClosedLoop
 from sim.params import SPEC_BY_NAME, make_params, params_to_dict
 from sim.plant import operating_point, solve_steady
@@ -77,7 +77,9 @@ def baseline_sweep(base: dict, rpms=(0, 150, 220, 260, 300, 340, 380, 420, 450))
                      "plate_dp": op.plate_dp_pa, "p1": op.p1_pa, "p2": op.p2_pa,
                      "p_fan_in": op.p_fan_in_pa, "t_chim_mean": op.t_chimney_mean_c,
                      "t_chim_top": op.t_chimney_top_c,
-                     "p1_range_use": abs(op.p1_pa) / p.p_range_pa})
+                     "p1_range_use": op.p1_pa / p.p_range_pa,
+                     "readable": 0.0 <= op.p2_pa and op.p1_pa <= p.p_range_pa,
+                     "legacy": legacy_flow(op.p1_pa, op.p2_pa, op.t_gas_c)})
     return rows
 
 
@@ -165,9 +167,9 @@ def plate_beta_study(base: dict, betas=(0.4, 0.5, 0.6, 0.7)) -> list[dict]:
         p = build(base, plate_beta=beta)
         rpm = rpm_for_flow(p)
         op = solve_steady(p, rpm or 0.0, p.t_gas_c, p.t_amb_c)
-        dp_counts = op.plate_dp_pa / (2 * p.p_range_pa) * 6000
+        dp_counts = op.plate_dp_pa / p.p_range_pa * 6000
         rows.append({"beta": beta, "rpm_needed": rpm, "plate_dp": op.plate_dp_pa, "p1": op.p1_pa,
-                     "p1_range_use": abs(op.p1_pa) / p.p_range_pa, "dp_counts": dp_counts,
+                     "p1_range_use": op.p1_pa / p.p_range_pa, "dp_counts": dp_counts,
                      "pct_per_count": 100.0 / (2 * dp_counts) if dp_counts > 0 else math.inf})
     return rows
 
@@ -184,10 +186,51 @@ def flow_resolution_vs_flow(base: dict, flows=(1.5, 2.0, 2.5, 3.0, 3.5, 4.0)) ->
     for q in flows:
         rho = solve_steady(p, 0.0, p.t_gas_c, p.t_amb_c).rho_plate
         op = operating_point(p, q * rho, 0.0, p.t_gas_c, p.t_amb_c)
-        counts = op.plate_dp_pa / (2 * p.p_range_pa) * 6000
+        counts = op.plate_dp_pa / p.p_range_pa * 6000
         rows.append({"q": q, "holdable": low <= q <= high, "plate_dp": op.plate_dp_pa, "dp_counts": counts,
                      "pct_per_count": 100.0 / (2 * counts) if counts > 0 else math.inf})
     return rows
+
+
+def legacy_value_vs_back_pressure(base: dict, areas=(0.13, 0.15, 0.17, 0.20, 0.25),
+                                  target: float = TARGET_FLOW) -> list[dict]:
+    """
+    The legacy formula uses the ratio P2/P1 of two gauge pressures, so its value moves when the
+    pressure LEVEL at the plate moves, even if the flow does not. Here the true flow is held at the
+    target while the restriction after the plate is changed (soot, a damper): the plate differential
+    stays the same and the legacy value changes.
+    """
+    rows = []
+    for area in areas:
+        p = build(base, restriction_free_area_m2=area)
+        rpm = rpm_for_flow(p, target)
+        if rpm is None:
+            continue
+        op = solve_steady(p, rpm, p.t_gas_c, p.t_amb_c)
+        rows.append({"area": area, "rpm": rpm, "q": op.q_m3_s, "p1": op.p1_pa, "p2": op.p2_pa,
+                     "plate_dp": op.plate_dp_pa, "legacy": legacy_flow(op.p1_pa, op.p2_pa, op.t_gas_c)})
+    return rows
+
+
+def lowest_readable_speed(base: dict) -> dict:
+    """The fan speed below which P2 goes under 0 Pa and the one-sided transmitter can no longer read it."""
+    p = build(base)
+    lo, hi = 0.0, RPM_SEARCH_MAX
+    if solve_steady(p, lo, p.t_gas_c, p.t_amb_c).p2_pa >= 0.0:
+        return {"rpm": 0.0, "q": flow_at(p, 0.0)}
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        lo, hi = (mid, hi) if solve_steady(p, mid, p.t_gas_c, p.t_amb_c).p2_pa < 0.0 else (lo, mid)
+    return {"rpm": hi, "q": flow_at(p, hi)}
+
+
+def charge_disturbance(base: dict, open_pct: float = 30.0, target: float = TARGET_FLOW) -> dict:
+    """Fuel charges every 15 minutes open the kiln briefly: how far does the true flow move under PID."""
+    loop = ClosedLoop(_quiet(base, charge_open_pct=open_pct), f"PID {target}")
+    records = _run(loop, 2700)[900:]            # skip the start-up, keep two charges
+    return {"open_pct": open_pct, "peak_deviation": max(abs(r["flow_true_m3s"] - target) for r in records),
+            "rpm_min": min(r["rpm_commanded"] for r in records), "rpm_max": max(r["rpm_commanded"] for r in records),
+            "records": records}
 
 
 # --------------------------------------------------------------------------- measurement errors

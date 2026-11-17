@@ -13,9 +13,9 @@ import math
 import random
 
 from sim import params as sim_params
-from sim.instruments import (Transmitter, counts_valid, estimate_flow, COUNTS_FULL_SCALE,
-                             FAULTS)
-from sim.plant import Plant, environment, solve_steady, OperatingPoint
+from sim.instruments import (Transmitter, counts_valid, counts_saturated, estimate_flow, legacy_flow,
+                             COUNTS_FULL_SCALE, FAULTS)
+from sim.plant import Plant, environment, kiln_area_factor, solve_steady, OperatingPoint
 
 from calculation import Scaler          # fan-ctrl
 from command import Command             # fan-ctrl
@@ -48,6 +48,8 @@ class ClosedLoop:
         self.command = Command("OFF")
         self._last_mode: str | None = None
         self._natural_guess: float | None = None   # warm start for the "draft alone" solve
+        self.drive_reference_rpm = start_rpm       # what the drive follows after skipping the resonance band
+        self.flow_legacy: float | None = None      # legacy calc_pv value from the last scan (display only)
         self.set_command(command)
 
     # ------------------------------------------------------------ inputs
@@ -84,14 +86,14 @@ class ClosedLoop:
 
     def _configure_transmitters(self) -> None:
         p = self.p
-        self.transmitters["p1"].configure(-p.p_range_pa, p.p_range_pa, p.sensor_tau_s, p.p_noise_pa)
-        self.transmitters["p2"].configure(-p.p_range_pa, p.p_range_pa, p.sensor_tau_s, p.p_noise_pa)
+        self.transmitters["p1"].configure(0.0, p.p_range_pa, p.sensor_tau_s, p.p_noise_pa)
+        self.transmitters["p2"].configure(0.0, p.p_range_pa, p.sensor_tau_s, p.p_noise_pa)
         self.transmitters["t"].configure(0.0, p.t_range_max_c, p.sensor_tau_s, p.t_noise_c)
 
     def _scalers(self) -> dict[str, Scaler]:
         p = self.p
-        return {"p1": Scaler(0, COUNTS_FULL_SCALE, -p.p_range_pa, p.p_range_pa),
-                "p2": Scaler(0, COUNTS_FULL_SCALE, -p.p_range_pa, p.p_range_pa),
+        return {"p1": Scaler(0, COUNTS_FULL_SCALE, 0.0, p.p_range_pa),
+                "p2": Scaler(0, COUNTS_FULL_SCALE, 0.0, p.p_range_pa),
                 "t": Scaler(0, COUNTS_FULL_SCALE, 0.0, p.t_range_max_c)}
 
     # ------------------------------------------------------------ control
@@ -101,6 +103,7 @@ class ClosedLoop:
         Updates ``self.drive``.
         """
         p = self.p
+        self.flow_legacy = None
         if not all(counts_valid(c) for c in counts.values()):
             self.pid.reset()
             self._last_mode = None
@@ -110,6 +113,7 @@ class ClosedLoop:
         scalers = self._scalers()
         eng = {name: scalers[name](counts[name]) for name in CHANNELS}
         flow = estimate_flow(p, eng["p1"], eng["p2"], eng["t"])
+        self.flow_legacy = legacy_flow(eng["p1"], eng["p2"], eng["t"])
 
         mode = self.command.command
         entering_pid = mode == "PID" and self._last_mode != "PID"
@@ -165,17 +169,34 @@ class ClosedLoop:
         if (at_high_limit and error > 0.0) or (at_low_limit and error < 0.0):
             self.pid._integral -= error * self.p.scan_interval_s
 
+    def _skip_resonance(self, rpm: float) -> float:
+        """
+        The drive's critical-speed function. A reference inside the resonance band is not followed:
+        the drive stays at the edge it arrived from, and jumps across only when the reference leaves
+        the band on the other side. The shaft still passes through the band while ramping.
+        """
+        low, high = self.p.resonance_low_rpm, self.p.resonance_high_rpm
+        if high <= low or not low < rpm < high:
+            return rpm
+        if self.drive_reference_rpm <= low:
+            return low
+        if self.drive_reference_rpm >= high:
+            return high
+        return low if rpm - low < high - rpm else high
+
     # ------------------------------------------------------------ stepping
     def step(self) -> dict:
         """Advance one controller scan and return a record of everything, for logging/plotting."""
         p = self.p
         dt = p.scan_interval_s
         t_amb, t_gas_target = environment(p, self.time_s)
+        area_factor = kiln_area_factor(p, self.time_s)
+        self.drive_reference_rpm = self._skip_resonance(self.drive.commanded_rpm)
 
         sub_steps = max(1, math.ceil(dt / MAX_PLANT_STEP_S))
         op: OperatingPoint | None = None
         for _ in range(sub_steps):
-            op = self.plant.step(dt / sub_steps, self.drive.commanded_rpm, t_gas_target, t_amb)
+            op = self.plant.step(dt / sub_steps, self.drive_reference_rpm, t_gas_target, t_amb, area_factor)
         self.time_s += dt
 
         counts = {"p1": self.transmitters["p1"].sample(op.p1_pa, dt),
@@ -183,7 +204,8 @@ class ClosedLoop:
                   "t": self.transmitters["t"].sample(op.t_gas_c, dt)}
         status, flow_estimate, pid_raw = self._control(counts)
 
-        natural = solve_steady(p, 0.0, self.plant.t_gas_c, t_amb, guess=self._natural_guess)
+        natural = solve_steady(p, 0.0, self.plant.t_gas_c, t_amb, guess=self._natural_guess,
+                               kiln_area_factor=area_factor)
         self._natural_guess = natural.mass_flow_kg_s
         return {
             "time_s": self.time_s,
@@ -191,10 +213,15 @@ class ClosedLoop:
             "mode": self.command.command,
             "setpoint_m3s": self.command.value if self.command.command == "PID" else None,
             "flow_estimate_m3s": flow_estimate,
+            "flow_legacy": self.flow_legacy,
             "flow_true_m3s": op.q_m3_s,
             "flow_natural_only_m3s": natural.q_m3_s,
             "rpm_commanded": self.drive.commanded_rpm,
+            "rpm_drive_reference": self.drive_reference_rpm,
             "rpm_actual": self.plant.rpm,
+            "in_resonance_band": p.resonance_low_rpm < self.plant.rpm < p.resonance_high_rpm,
+            "pressure_out_of_range": counts_saturated(counts["p1"]) or counts_saturated(counts["p2"]),
+            "kiln_area_factor": area_factor,
             "pid_output": pid_raw,
             "p1_pa": op.p1_pa, "p2_pa": op.p2_pa, "plate_dp_pa": op.plate_dp_pa,
             "p_fan_in_pa": op.p_fan_in_pa, "p_fan_out_pa": op.p_fan_out_pa,

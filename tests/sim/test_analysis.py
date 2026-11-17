@@ -97,3 +97,23 @@ def test_narrow_chimney_top_costs_exit_loss_and_fan_speed(base):
     assert rows[0]["loss_exit"] > rows[1]["loss_exit"]
     assert rows[0]["rpm_needed"] > rows[1]["rpm_needed"]
     assert rows[0]["q_fixed_rpm"] < rows[1]["q_fixed_rpm"]
+
+
+def test_legacy_value_moves_with_back_pressure_at_constant_flow(base):
+    rows = an.legacy_value_vs_back_pressure(base, areas=(0.15, 0.20))
+    assert rows[0]["q"] == pytest.approx(rows[1]["q"], rel=1e-4)
+    assert rows[0]["plate_dp"] == pytest.approx(rows[1]["plate_dp"], rel=1e-3)
+    assert rows[0]["legacy"] < rows[1]["legacy"] * 0.9          # tighter restriction, lower legacy value
+
+
+def test_transmitters_cannot_read_below_a_minimum_fan_speed(base):
+    result = an.lowest_readable_speed(base)
+    assert 200 < result["rpm"] < 300
+    sweep = {r["rpm"]: r for r in an.baseline_sweep(base)}
+    assert not sweep[220]["readable"] and sweep[380]["readable"]
+
+
+def test_fuel_charges_disturb_the_flow_only_briefly(base):
+    result = an.charge_disturbance(base)
+    assert 0.02 < result["peak_deviation"] < 0.6
+    assert result["rpm_max"] > result["rpm_min"]

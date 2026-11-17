@@ -92,9 +92,85 @@ def test_anti_windup_makes_recovery_from_saturation_faster():
 
 def test_minimum_speed_of_zero_lets_the_fan_stop():
     p = quiet(motor_min_rpm=0, pid_min_rpm=0)
-    natural = solve_steady(p, 0, p.t_gas_c, p.t_amb_c).q_m3_s
-    last = run(ClosedLoop(p, f"PID {natural - 1.0:.2f}"), 300)[-1]
-    assert last["rpm_commanded"] == 0.0
+    last = run(ClosedLoop(p, "MAN 0"), 300)[-1]
+    assert last["rpm_commanded"] == 0.0 and last["rpm_actual"] == pytest.approx(0.0, abs=1)
+    assert last["flow_true_m3s"] > 1.0                    # natural draft still moves gas
+
+
+def test_one_sided_transmitters_blind_the_loop_at_low_speed():
+    """
+    Below about 245 rpm P2 is under suction, which a 0..250 Pa transmitter cannot read. The loop then
+    under-reads the flow and cannot bring the fan down to a low setpoint: the real flow stays well
+    above it and the fan hunts around the speed where the reading is lost.
+    """
+    p = quiet(motor_min_rpm=0, pid_min_rpm=0)
+    late = run(ClosedLoop(p, "PID 2.0"), 900)[-300:]
+    assert any(r["pressure_out_of_range"] for r in late)
+    assert all(r["p2_pa"] < 0 for r in late)
+    assert all(r["flow_true_m3s"] > 2.3 for r in late)    # real flow never comes down to the setpoint
+    assert all(r["flow_legacy"] is None for r in late)    # the legacy formula has no answer here either
+    speeds = [r["rpm_commanded"] for r in late]
+    assert max(speeds) - min(speeds) > 5                  # it does not settle
+
+
+def test_pressures_in_range_at_the_default_setpoint():
+    last = run(ClosedLoop(quiet(), "PID 3.6"), 300)[-1]
+    assert not last["pressure_out_of_range"]
+    assert 0 < last["p2_pa"] < last["p1_pa"] < 250
+    assert last["flow_legacy"] == pytest.approx(31, abs=2)
+
+
+# --------------------------------------------------------------------------- resonance band
+def test_drive_skips_the_resonance_band():
+    """A reference inside 150..210 rpm is held at the edge it came from."""
+    p = quiet(motor_min_rpm=0, pid_min_rpm=0)
+    loop = ClosedLoop(p, "MAN 300")
+    run(loop, 60)
+    loop.set_command("MAN 180")                           # coming down into the band
+    last = run(loop, 120)[-1]
+    assert last["rpm_commanded"] == 180 and last["rpm_drive_reference"] == 210
+    assert last["rpm_actual"] == pytest.approx(210, abs=1) and not last["in_resonance_band"]
+    loop.set_command("MAN 100")                           # leave the band at the bottom
+    run(loop, 120)
+    loop.set_command("MAN 180")                           # coming up into the band
+    last = run(loop, 120)[-1]
+    assert last["rpm_drive_reference"] == 150
+    assert last["rpm_actual"] == pytest.approx(150, abs=1)
+
+
+def test_shaft_is_flagged_while_it_crosses_the_band():
+    p = quiet(motor_min_rpm=0, pid_min_rpm=0, drive_ramp_rpm_s=5)
+    loop = ClosedLoop(p, "MAN 300")
+    run(loop, 30)
+    loop.set_command("MAN 100")
+    records = run(loop, 120)
+    crossing = [r for r in records if r["in_resonance_band"]]
+    assert 5 < len(crossing) < 30                         # 60 rpm of band at 5 rpm/s, then it is out again
+    assert not records[-1]["in_resonance_band"]
+
+
+def test_resonance_skip_can_be_switched_off():
+    p = quiet(motor_min_rpm=0, pid_min_rpm=0, resonance_low_rpm=0, resonance_high_rpm=0)
+    last = run(ClosedLoop(p, "MAN 180"), 120)[-1]
+    assert last["rpm_actual"] == pytest.approx(180, abs=1)
+
+
+# --------------------------------------------------------------------------- kiln disturbances
+def test_fuel_charge_opens_the_kiln_briefly_and_the_pid_recovers():
+    loop = ClosedLoop(quiet(charge_open_pct=30, charge_period_s=300, charge_open_s=30), "PID 3.6")
+    records = run(loop, 900)
+    factors = {round(r["kiln_area_factor"], 2) for r in records}
+    assert factors == {1.0, 1.3}
+    assert max(abs(r["flow_true_m3s"] - 3.6) for r in records[500:590]) < 0.05    # settled between charges
+    assert max(r["flow_true_m3s"] for r in records[295:340]) > 3.65               # the charge is felt
+
+
+def test_damper_cycle_moves_fan_suction_and_the_pid_holds_the_flow():
+    loop = ClosedLoop(quiet(kiln_area_swing_pct=20, kiln_area_period_s=600), "PID 3.6")
+    records = run(loop, 1200)[600:]
+    suction = [r["p_fan_in_pa"] for r in records]
+    assert max(suction) - min(suction) > 50
+    assert max(abs(r["flow_true_m3s"] - 3.6) for r in records) < 0.1
 
 
 # --------------------------------------------------------------------------- modes
@@ -194,7 +270,8 @@ def test_record_reports_natural_only_flow_for_the_gui():
     expected = solve_steady(loop.p, 0, loop.plant.t_gas_c, 30).q_m3_s
     assert rec["flow_natural_only_m3s"] == pytest.approx(expected)
     assert {"time_s", "rpm_actual", "p1_pa", "p2_pa", "draft_pa", "fan_dp_pa", "counts_p1",
-            "p_fan_in_pa", "p_fan_out_pa", "p_chimney_base_pa"} <= rec.keys()
+            "p_fan_in_pa", "p_fan_out_pa", "p_chimney_base_pa", "flow_legacy", "rpm_drive_reference",
+            "in_resonance_band", "pressure_out_of_range", "kiln_area_factor"} <= rec.keys()
 
 
 def test_firing_cycle_swing_is_visible_in_gas_temperature_and_rejected_by_pid():

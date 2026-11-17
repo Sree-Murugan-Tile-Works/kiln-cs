@@ -148,3 +148,22 @@
 - `sim/loop.py`, `sim/analysis.py` and tests adapted; chimney taper study added. 303 tests pass.
 - Known gaps until later stages: `python -m sim.report` does not run (stage E); the GUI drawing
   still shows the plate before the fan (stage D); transmitters are still two-sided (stage B).
+
+## 2026-11-17 — Build stage B: site realism
+- Transmitters are one-sided (0 to `p_range_pa`, default 250 Pa) and saturate at 3.8 / 20.5 mA
+  (-75 / 6188 counts). Suction cannot be read.
+- Drive skips the resonance band (150-210 rpm); the record flags when the shaft is inside it.
+- Legacy `calc_pv` is called unchanged with the fan-ctrl default constants and shown as
+  `flow_legacy`. A characterisation test pins its value at the site reading (31.007).
+- Kiln disturbances: fuel-charge pulses and a damper-cycle swing of the kiln free area (off by default).
+- New analysis functions: legacy value against back-pressure, lowest readable fan speed, charge
+  disturbance. 332 tests pass.
+- Findings from the model (placeholder values, to be checked on site):
+  - P2 goes below 0 Pa under about 245 rpm, so the flow cannot be measured there. With a low
+    setpoint the loop under-reads the flow and the fan hunts.
+  - The default minimum speed (220 rpm) is inside that unreadable region.
+  - The legacy value is not a steady function of flow in this model: it peaks near 300 rpm and
+    falls at higher speed, because P2/P1 rises with back-pressure. The real system was controlled
+    with this value for years, so either the real back-pressure behaves differently from the
+    modelled restriction, or the legacy inputs are not plain gauge pressures. A speed step test
+    on site (rpm against P1 and P2) would settle it.

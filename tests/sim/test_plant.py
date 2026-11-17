@@ -5,7 +5,7 @@ import pytest
 from sim.gas import density, barometric_pressure, air_viscosity, AIR_MOLAR_MASS_G_MOL, G
 from sim.instruments import estimate_flow
 from sim.params import make_params
-from sim.plant import (Plant, solve_steady, operating_point, environment, chimney_state,
+from sim.plant import (Plant, solve_steady, operating_point, environment, chimney_state, kiln_area_factor,
                        chimney_geometry, _loss_coefficients, PERMANENT_LOSS_EXPONENT, CHIMNEY_SLICES)
 
 AMB = 30.0
@@ -365,3 +365,31 @@ def test_environment_swings_around_the_base_values():
 def test_operating_point_at_zero_flow_is_quiet():
     op = operating_point(make_params(), 0.0, 0.0, GAS, AMB)
     assert op.plate_dp_pa == 0 and op.p1_pa == 0 and op.stalled
+
+
+# --------------------------------------------------------------------------- kiln disturbances
+def test_kiln_is_steady_by_default():
+    p = make_params()
+    assert all(kiln_area_factor(p, t) == 1.0 for t in (0, 30, 900, 5000))
+
+
+def test_fuel_charge_opens_the_kiln_for_a_short_time_every_period():
+    p = make_params({"charge_open_pct": 40, "charge_period_s": 900, "charge_open_s": 60})
+    assert kiln_area_factor(p, 10) == pytest.approx(1.4)
+    assert kiln_area_factor(p, 61) == pytest.approx(1.0)
+    assert kiln_area_factor(p, 910) == pytest.approx(1.4)
+
+
+def test_damper_cycle_swings_the_kiln_free_area():
+    p = make_params({"kiln_area_swing_pct": 20, "kiln_area_period_s": 3600})
+    assert kiln_area_factor(p, 900) == pytest.approx(1.2)
+    assert kiln_area_factor(p, 2700) == pytest.approx(0.8)
+
+
+def test_more_open_kiln_gives_more_flow_at_the_same_fan_speed():
+    p = make_params()
+    normal = solve_steady(p, RATED, GAS, AMB)
+    opened = solve_steady(p, RATED, GAS, AMB, kiln_area_factor=1.3)
+    assert opened.q_m3_s > normal.q_m3_s
+    assert opened.p_fan_in_pa > normal.p_fan_in_pa           # less suction needed
+    assert opened.p_top_residual_pa == pytest.approx(0.0, abs=1e-6)
